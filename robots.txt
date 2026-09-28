@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://1613676-d9d447064e7f419ea09f9f4ecf1bc93b-v1-dev.dev.atoms.dev/sitemap.xml
