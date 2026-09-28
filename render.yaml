@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: syriastore
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: JWT_SECRET
+        sync: false  # سيُطلب منك إدخال القيمة يدويًا في لوحة التحكم
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
