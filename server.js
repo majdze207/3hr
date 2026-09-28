@@ -507,13 +507,6 @@ app.put('/api/admin/settings', auth, adminOnly, (req, res) => {
 // SPA fallback
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-app.listen(PORT, () => {
-  console.log('');
-  console.log('════════════════════════════════════════');
-  console.log('   🇸🇾  سورياستور يعمل بنجاح');
-  console.log('   🌐  http://localhost:' + PORT);
-  console.log('   👤  الأدمن: admin@syriastore.com');
-  console.log('   🔑  كلمة السر: admin123');
-  console.log('════════════════════════════════════════');
-  console.log('');
+app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
+    console.log(`✅ سورياستور يعمل على المنفذ ${process.env.PORT || 3000}`);
 });
