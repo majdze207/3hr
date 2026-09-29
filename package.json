@@ -1,11 +1,9 @@
 {
-  "name": "amazon-syria",
+  "name": "wasalni",
   "version": "1.0.0",
-  "description": "أمازون سوريا - متجر عالمي",
+  "description": "وصلني — وسيط تسوق ولوجستيات دولية إلى سوريا",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "scripts": { "start": "node server.js" },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.11.1",
