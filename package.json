@@ -1,7 +1,7 @@
 {
-  "name": "syriastore",
+  "name": "amazon-syria",
   "version": "1.0.0",
-  "description": "سورياستور - متجر عالمي بنكهة سورية",
+  "description": "أمازون سوريا - متجر عالمي",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
