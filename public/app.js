@@ -112,7 +112,7 @@ function renderHeader() {
 function renderFooter() {
   document.getElementById('footer').innerHTML = `
     ${flagSVG('xs')}
-    <p><strong>أمازون سوريا</strong> — تسوّق عالمي، توصيل إلى سوريا 🇸🇾</p>
+    <p><strong>أمازون سوريا</strong> — تسوّق عالمي، توصيل إلى سوريا</p>
     <div class="links">
       <a onclick="navigate('/categories')" style="cursor:pointer">الأقسام</a>
       <a onclick="navigate('/orders')" style="cursor:pointer">طلباتي</a>
