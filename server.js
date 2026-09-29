@@ -7,285 +7,197 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'amazon-syria-2025-secret-key';
-const DB_PATH = process.env.DB_PATH || 'amazon_syria.db';
+const JWT_SECRET = process.env.JWT_SECRET || 'wasalni-secret-2025';
+const DB_PATH = process.env.DB_PATH || 'wasalni.db';
 const ADMIN_EMAILS = ['admin@gmail.com'];
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-// ============ الجداول ============
+// ==================== الجداول ====================
 db.exec(`
 CREATE TABLE IF NOT EXISTS accounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  email TEXT UNIQUE,
-  phone TEXT UNIQUE,
-  name TEXT NOT NULL,
-  password_hash TEXT NOT NULL,
-  banned INTEGER DEFAULT 0,
-  is_admin INTEGER DEFAULT 0,
+  email TEXT UNIQUE, phone TEXT UNIQUE, name TEXT NOT NULL,
+  password_hash TEXT NOT NULL, banned INTEGER DEFAULT 0, is_admin INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE TABLE IF NOT EXISTS categories (
+CREATE TABLE IF NOT EXISTS countries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name_ar TEXT NOT NULL,
-  icon TEXT DEFAULT '📦',
-  sort_order INTEGER DEFAULT 0,
-  active INTEGER DEFAULT 1
+  name_ar TEXT NOT NULL, name_en TEXT NOT NULL, flag TEXT DEFAULT '🌐',
+  active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0
 );
-
-CREATE TABLE IF NOT EXISTS products (
+CREATE TABLE IF NOT EXISTS regions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  category_id INTEGER NOT NULL,
-  title TEXT NOT NULL,
-  description TEXT DEFAULT '',
-  notes TEXT DEFAULT '',
-  price_usd REAL NOT NULL,
-  shipping_fee_usd REAL DEFAULT 0,
-  image_url TEXT DEFAULT '',
-  stock INTEGER DEFAULT 0,
-  discount_percent REAL DEFAULT 0,
-  discount_active INTEGER DEFAULT 0,
-  active INTEGER DEFAULT 1,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE
+  country_id INTEGER NOT NULL, name_ar TEXT NOT NULL,
+  delivery_fee_usd REAL DEFAULT 0, active INTEGER DEFAULT 1,
+  FOREIGN KEY (country_id) REFERENCES countries(id) ON DELETE CASCADE
 );
-
-CREATE TABLE IF NOT EXISTS reviews (
+CREATE TABLE IF NOT EXISTS stores (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  product_id INTEGER NOT NULL,
-  user_id INTEGER,
-  user_name TEXT NOT NULL,
-  rating INTEGER NOT NULL,
-  comment TEXT DEFAULT '',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE SET NULL
+  name_ar TEXT NOT NULL, name_en TEXT NOT NULL, icon TEXT DEFAULT '🛒',
+  url_hint TEXT DEFAULT '', active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0
 );
-
-CREATE TABLE IF NOT EXISTS shipping_companies (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  active INTEGER DEFAULT 1,
-  sort_order INTEGER DEFAULT 0
-);
-
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  user_name TEXT,
-  receiver_full_name TEXT NOT NULL,
-  receiver_phone TEXT NOT NULL,
-  region TEXT NOT NULL,
-  shipping_company_id INTEGER,
-  shipping_company_name TEXT,
-  items_json TEXT NOT NULL,
-  subtotal_usd REAL NOT NULL,
-  shipping_total_usd REAL NOT NULL,
-  discount_total_usd REAL DEFAULT 0,
-  total_usd REAL NOT NULL,
-  wallet_address TEXT,
-  tx_ref TEXT,
-  status TEXT DEFAULT 'awaiting_confirmation',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  order_number TEXT UNIQUE NOT NULL,
+  user_id INTEGER NOT NULL, user_name TEXT,
+  country_id INTEGER, region_id INTEGER,
+  receiver_name TEXT NOT NULL, receiver_phone TEXT NOT NULL, full_address TEXT NOT NULL,
+  store_name TEXT, product_title TEXT NOT NULL, product_url TEXT NOT NULL,
+  product_price_usd REAL NOT NULL, quantity INTEGER DEFAULT 1,
+  weight_kg REAL NOT NULL, shipping_method TEXT DEFAULT 'air',
+  shipping_cost_usd REAL NOT NULL, customs_usd REAL NOT NULL,
+  commission_usd REAL NOT NULL, delivery_fee_usd REAL NOT NULL,
+  total_usd REAL NOT NULL, admin_adjusted_usd REAL,
+  wallet_network TEXT, wallet_address TEXT, tx_ref TEXT, tx_proof_url TEXT,
+  status TEXT DEFAULT 'awaiting_payment', notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE,
-  FOREIGN KEY (shipping_company_id) REFERENCES shipping_companies(id) ON DELETE SET NULL
+  FOREIGN KEY (country_id) REFERENCES countries(id),
+  FOREIGN KEY (region_id) REFERENCES regions(id)
 );
-
+CREATE TABLE IF NOT EXISTS order_tracking (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL, status TEXT NOT NULL,
+  note TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS pricing (
+  key TEXT PRIMARY KEY, value TEXT
+);
+CREATE TABLE IF NOT EXISTS wallets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  network TEXT NOT NULL, address TEXT NOT NULL,
+  active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS testimonials (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_name TEXT, title TEXT, description TEXT,
+  image_url TEXT DEFAULT '', video_url TEXT DEFAULT '',
+  active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS content (
+  key TEXT PRIMARY KEY, value TEXT
+);
 CREATE TABLE IF NOT EXISTS support_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id INTEGER NOT NULL,
-  user_name TEXT,
-  message TEXT NOT NULL,
-  reply TEXT,
-  status TEXT DEFAULT 'open',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  replied_at DATETIME,
+  user_id INTEGER NOT NULL, user_name TEXT,
+  message TEXT NOT NULL, reply TEXT, status TEXT DEFAULT 'open',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP, replied_at DATETIME,
   FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
-
-CREATE TABLE IF NOT EXISTS site_settings (
-  key TEXT PRIMARY KEY,
-  value TEXT
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL, order_id INTEGER,
+  title TEXT NOT NULL, body TEXT DEFAULT '',
+  read INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
 `);
 
-// ============ البذور ============
+// ==================== الثوابت ====================
+const STATUS_LABELS = {
+  awaiting_payment: '⏳ بانتظار الدفع',
+  payment_received: '💵 تم استلام الدفع',
+  purchased: '🛍️ تم الشراء من المتجر',
+  warehouse_foreign: '📦 وصل المستودع الخارجي',
+  international_shipping: '✈️ قيد الشحن الدولي',
+  arrived_syria: '🇸🇾 وصل سوريا',
+  out_for_delivery: '🚚 قيد التوصيل للمحافظة',
+  delivered: '✅ تم التسليم',
+  cancelled: '❌ ملغي',
+  refunded: '💸 مسترجع'
+};
+const STATUS_FLOW = ['awaiting_payment','payment_received','purchased','warehouse_foreign','international_shipping','arrived_syria','out_for_delivery','delivered'];
+
+// ==================== البذور ====================
 function seed() {
   // الإعدادات
-  const setS = db.prepare('INSERT OR IGNORE INTO site_settings (key, value) VALUES (?, ?)');
-  setS.run('usdt_wallet_address', '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0');
-  setS.run('network', 'BEP20');
-  setS.run('announcement', '🚚 شحن من 3 إلى 6 أسابيع لجميع المحافظات السورية');
-  setS.run('site_name', 'أمازون سوريا');
+  const setP = db.prepare('INSERT OR IGNORE INTO pricing (key, value) VALUES (?, ?)');
+  setP.run('per_kg_air', '18');
+  setP.run('per_kg_sea', '6');
+  setP.run('customs_percent', '15');
+  setP.run('commission_percent', '10');
+  setP.run('min_weight_kg', '0.5');
+  setP.run('usdt_rate', '1');
+  setP.run('default_shipping_method', 'air');
+
+  const setC = db.prepare('INSERT OR IGNORE INTO content (key, value) VALUES (?, ?)');
+  setC.run('site_name', 'وصلني');
+  setC.run('site_tagline', 'وسيطك للتسوق من أمازون والعالم — نوصلك إلى سوريا');
+  setC.run('hero_title', '🛒 تسوّق من أي متجر عالمي... ونوصلك إلى سوريا');
+  setC.run('hero_subtitle', 'الصق رابط المنتج من أمازون أو علي إكسبريس أو إي باي — احسب السعر النهائي وادفع بالكريبتو، ونحن نتكفل بالباقي.');
+  setC.run('about_text', 'وصلني هي منصة وساطة تسوق ولوجستيات دولية، تتيح لأهلنا في سوريا الشراء من أكبر المتاجر العالمية (Amazon, AliExpress, eBay وغيرها) ودفع المبلغ بالكريبتو USDT، ثم تتبع شحنتهم مرحلة بمرحلة حتى الاستلام في سوريا.');
+  setC.run('terms_text', 'باستخدامك للمنصة فإنك توافق على الشروط والأحكام: أنت مسؤول عن صحة المعلومات المدخلة، ومدة التسليم تتراوح بين 3 إلى 6 أسابيع حسب الوزن والدولة المصدرة وشركة الشحن.');
+  setC.run('refund_text', 'نضمن لك استرجاع كامل المبلغ بالـ USDT في حال عدم وصول الشحنة خلال المدة القصوى المحددة (8 أسابيع)، أو في حال تلف المنتج أثناء الشحن.');
+  setC.run('whatsapp_number', '+963900000000');
+  setC.run('telegram_channel', 'wasalni');
+  setC.run('warranty_note', 'ضمان استرجاع كامل للـ USDT عند عدم وصول الشحنة.');
 
   // الأدمن
-  const adminExists = db.prepare('SELECT id FROM accounts WHERE email = ?').get('admin@gmail.com');
-  if (!adminExists) {
+  if (!db.prepare('SELECT id FROM accounts WHERE email = ?').get('admin@gmail.com')) {
     const hash = bcrypt.hashSync('Admin@123', 10);
     db.prepare('INSERT INTO accounts (email, phone, name, password_hash, is_admin) VALUES (?, ?, ?, ?, 1)')
-      .run('admin@gmail.com', '0900000000', 'المدير', hash);
+      .run('admin@gmail.com', '0900000000', 'مدير وصلني', hash);
     console.log('✅ الأدمن: admin@gmail.com / Admin@123');
   }
 
-  // الأقسام
-  const cCount = db.prepare('SELECT COUNT(*) c FROM categories').get().c;
-  if (cCount === 0) {
-    const ins = db.prepare('INSERT INTO categories (name_ar, icon, sort_order) VALUES (?, ?, ?)');
-    ins.run('مطبخ', '🍳', 1);
-    ins.run('تنظيف', '🧹', 2);
-    ins.run('عناية بالبشرة', '🧴', 3);
-    ins.run('دراسة وكتب', '📚', 4);
-    ins.run('إلكترونيات', '📱', 5);
-    ins.run('ألعاب وترفيه', '🎮', 6);
+  // الدول
+  if (db.prepare('SELECT COUNT(*) c FROM countries').get().c === 0) {
+    const ins = db.prepare('INSERT INTO countries (name_ar, name_en, flag, sort_order) VALUES (?, ?, ?, ?)');
+    ins.run('سوريا', 'Syria', '🇸🇾', 1);
+    ins.run('لبنان', 'Lebanon', '🇱🇧', 2);
+    ins.run('العراق', 'Iraq', '🇮🇶', 3);
+    ins.run('الأردن', 'Jordan', '🇯🇴', 4);
   }
 
-  // شركات الشحن
-  const sCount = db.prepare('SELECT COUNT(*) c FROM shipping_companies').get().c;
-  if (sCount === 0) {
-    const ins = db.prepare('INSERT INTO shipping_companies (name, sort_order) VALUES (?, ?)');
-    ins.run('أرامكس', 1);
-    ins.run('DHL', 2);
-    ins.run('البريد السوري', 3);
-    ins.run('شركة النقل الوطنية', 4);
-  }
-
-  // المنتجات
-  const pCount = db.prepare('SELECT COUNT(*) c FROM products').get().c;
-  if (pCount === 0) {
-    const cats = db.prepare('SELECT id, name_ar FROM categories').all();
-    const findCat = (name) => cats.find(c => c.name_ar === name).id;
-
-    const ins = db.prepare('INSERT INTO products (category_id, title, description, notes, price_usd, shipping_fee_usd, image_url, stock, discount_percent, discount_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-
-    ins.run(findCat('مطبخ'), 'مقلاة هوائية فيليبس XXL',
-      'مقلاة هوائية بسعة 7.3 لتر، تقنية Rapid Air، 7 برامج طبخ مسبقة، شاشة رقمية تعمل باللمس. قوة 2225 واط مع ضمان سنة كاملة.',
-      'ملاحظة: المنتج أصلي ومستورد من هولندا.',
-      299, 22,
-      'https://images.unsplash.com/photo-1585515320310-259814833e62?w=600', 30, 15, 1);
-
-    ins.run(findCat('مطبخ'), 'طقم أواني ستانلس ستيل 12 قطعة',
-      'طقم أواني طبخ من الستانلس ستيل المقاوم للصدأ، يشمل قدور ومقالي بأحجام مختلفة، مناسب لجميع أنواع المواقد.',
-      'ضمان 5 سنوات على الطقم.',
-      189, 18,
-      'https://images.unsplash.com/photo-1556909212-d5b604d0c90d?w=600', 25, 0, 0);
-
-    ins.run(findCat('تنظيف'), 'مكنسة روبوت شاومي X10+',
-      'مكنسة روبوت ذاتية الشحن، شفط بقوة 4000Pa، رادار LDS لتخطيط المنزل، تعمل بالتطبيق مع قاعدة تفريغ ذاتي.',
-      'تشمل قاعدة تفريغ ذاتي + فلتر احتياطي.',
-      649, 35,
-      'https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?w=600', 12, 20, 1);
-
-    ins.run(findCat('تنظيف'), 'مسحوق غسيل أريال 5 كغ',
-      'مسحوق غسيل عالي الجودة للغسالات الأوتوماتيكية، إزالة فعالة للبقع الصعبة، رائحة تدوم طويلاً.',
-      'عبوة 5 كيلوغرام.',
-      35, 10,
-      'https://images.unsplash.com/photo-1585837575652-267c041d77d4?w=600', 50, 0, 0);
-
-    ins.run(findCat('عناية بالبشرة'), 'سيروم فيتامين سي The Ordinary',
-      'سيروم مركّز بفيتامين سي 20% لتفتيح البشرة وتوحيد اللون، يقلل من علامات التقدم بالعمر.',
-      'مناسب لجميع أنواع البشرة.',
-      45, 8,
-      'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=600', 40, 10, 1);
-
-    ins.run(findCat('عناية بالبشرة'), 'كريم مرطب لا روش بوزاي',
-      'كريم مرطب للوجه بتركيبة خفيفة سريعة الامتصاص، يناسب البشرة الحساسة، يحتوي على SPF 30.',
-      'يحمي من أشعة الشمس ويحافظ على نضارة البشرة.',
-      89, 12,
-      'https://images.unsplash.com/photo-1556228720-195a672e8a03?w=600', 35, 0, 0);
-
-    ins.run(findCat('دراسة وكتب'), 'لابتوب ديل XPS 15',
-      'لابتوب بشاشة 15.6 بوصة OLED، معالج Intel Core i7، ذاكرة 16GB، تخزين 512GB SSD، مناسب للدراسة والعمل الاحترافي.',
-      'يأتي بنظام Windows 11 أصلي.',
-      1899, 45,
-      'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=600', 8, 0, 0);
-
-    ins.run(findCat('دراسة وكتب'), 'كتاب تعلم البرمجة بلغة Python',
-      'كتاب شامل لتعلم لغة Python من الصفر حتى الاحتراف، يشمل 15 مشروعاً عملياً وأمثلة تطبيقية.',
-      'الكتاب باللغة العربية 450 صفحة.',
-      25, 5,
-      'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=600', 60, 0, 0);
-
-    ins.run(findCat('إلكترونيات'), 'آيفون 15 برو ماكس 256GB',
-      'هاتف بمعالج A17 Pro، هيكل تيتانيوم، كاميرا 48MP، شاشة Super Retina XDR 6.7 بوصة.',
-      'يأتي مغلق بضمان أبل الدولي.',
-      1199, 28,
-      'https://images.unsplash.com/photo-1592286927505-1def25115558?w=600', 18, 12, 1);
-
-    ins.run(findCat('إلكترونيات'), 'سماعات سوني WH-1000XM5',
-      'سماعات لاسلكية فوق الأذن بعزل ضوضاء رائد في الصناعة، عمر بطارية 30 ساعة، صوت عالي الدقة Hi-Res.',
-      'تشمل حقيبة حمل ووصلة صوت.',
-      379, 15,
-      'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600', 22, 0, 0);
-
-    ins.run(findCat('ألعاب وترفيه'), 'بلايستيشن 5 Slim',
-      'جهاز PlayStation 5 نسخة Slim بقرص، معالج رسومات قوي، دعم دقة 4K و 120Hz، SSD فائق السرعة.',
-      'يشمل يد تحكم DualSense واحدة.',
-      599, 30,
-      'https://images.unsplash.com/photo-1606813907291-d86efa9b94db?w=600', 10, 8, 1);
-
-    ins.run(findCat('ألعاب وترفيه'), 'لعبة FIFA 25 PS5',
-      'أحدث إصدار من سلسلة FIFA الرياضية، مع أكثر من 19,000 لاعب، دعم الوضع الأونلاين والبطولات.',
-      'لعبة أصلية بغلاف عربي.',
-      75, 6,
-      'https://images.unsplash.com/photo-1552820728-8b83bb6b773f?w=600', 45, 0, 0);
-  }
-
-  // التقييمات
-  const rCount = db.prepare('SELECT COUNT(*) c FROM reviews').get().c;
-  if (rCount === 0) {
-    const products = db.prepare('SELECT id FROM products').all();
-    const samples = [
-      ['أحمد محمد', 5, 'منتج ممتاز وصلني بأسرع من المتوقع، التغليف احترافي.'],
-      ['سارة علي', 4, 'جودة عالية لكن السعر مرتفع قليلاً مقارنة بالسوق.'],
-      ['رنا خالد', 5, 'تجربة شراء رائعة، المنتج مطابق للوصف تماماً.'],
-      ['خالد عمر', 4, 'وصلني بحالة ممتازة، شكراً للفريق.'],
-      ['نور الهدى', 5, 'أفضل متجر تعاملت معه، خدمة العملاء ممتازة.'],
-      ['حسن علي', 3, 'المنتج جيد لكن تأخر الشحن قليلاً.'],
-      ['ليلى إبراهيم', 5, 'أنصح الجميع بالشراء من هنا، أصلي 100%.'],
-      ['عمر يوسف', 4, 'المنتج أصلي وقيمة ممتازة مقابل السعر.'],
-      ['محمود أحمد', 5, 'وصلني بحالة ممتازة، سأكرر الشراء.'],
-      ['فاطمة حسن', 4, 'خدمة توصيل محترمة والمنتج فوق التوقعات.'],
-      ['ياسر محمود', 5, 'تجربة تسوق سلسة من البداية للنهاية.'],
-      ['دينا سمير', 3, 'المنتج جيد لكن التغليف كان بسيطاً.'],
-      ['هبة الله', 5, 'وصلني خلال 4 أسابيع بحالة ممتازة.'],
-      ['بلال ناصر', 4, 'خدمة عملاء متعاونة ومنتج أصلي.'],
-      ['طه ياسين', 5, 'الدفع بالكريبتو كان سهلاً جداً.'],
-      ['زينب علي', 4, 'منتج أصلي وسعر مناسب.'],
-      ['إسلام فارس', 5, 'منتظر أشتري مرة تانية، شكراً.']
+  // المحافظات السورية
+  const syria = db.prepare("SELECT id FROM countries WHERE name_en='Syria'").get();
+  if (syria && db.prepare('SELECT COUNT(*) c FROM regions WHERE country_id=?').get(syria.id).c === 0) {
+    const ins = db.prepare('INSERT INTO regions (country_id, name_ar, delivery_fee_usd) VALUES (?, ?, ?)');
+    const gov = [
+      ['دمشق', 5], ['ريف دمشق', 7], ['حلب', 8], ['حمص', 7],
+      ['حماة', 7], ['اللاذقية', 8], ['طرطوس', 8], ['إدلب', 9],
+      ['دير الزور', 10], ['الرقة', 10], ['الحسكة', 11], ['درعا', 8], ['السويداء', 8], ['القنيطرة', 8]
     ];
-    const ins = db.prepare('INSERT INTO reviews (product_id, user_name, rating, comment) VALUES (?, ?, ?, ?)');
-    samples.forEach((s, i) => {
-      const p = products[i % products.length];
-      ins.run(p.id, s[0], s[1], s[2]);
-    });
+    gov.forEach(([name, fee]) => ins.run(syria.id, name, fee));
+  }
+
+  // المتاجر المدعومة
+  if (db.prepare('SELECT COUNT(*) c FROM stores').get().c === 0) {
+    const ins = db.prepare('INSERT INTO stores (name_ar, name_en, icon, url_hint, sort_order) VALUES (?, ?, ?, ?, ?)');
+    ins.run('أمازون', 'Amazon', '🅰️', 'amazon.com', 1);
+    ins.run('علي إكسبريس', 'AliExpress', '🅰️', 'aliexpress.com', 2);
+    ins.run('إي باي', 'eBay', '🅴', 'ebay.com', 3);
+    ins.run('وول مارت', 'Walmart', '🆆', 'walmart.com', 4);
+    ins.run('متجر مخصص', 'Custom', '🌐', '', 5);
+  }
+
+  // المحافظ
+  if (db.prepare('SELECT COUNT(*) c FROM wallets').get().c === 0) {
+    const ins = db.prepare('INSERT INTO wallets (network, address, sort_order) VALUES (?, ?, ?)');
+    ins.run('TRC20', 'TXYZabcdefghijklmnopqrstuvwxyz123456', 1);
+    ins.run('BEP20', '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0', 2);
+  }
+
+  // إثباتات التسليم
+  if (db.prepare('SELECT COUNT(*) c FROM testimonials').get().c === 0) {
+    const ins = db.prepare('INSERT INTO testimonials (customer_name, title, description, image_url) VALUES (?, ?, ?, ?)');
+    ins.run('أحمد من دمشق', 'آيفون 15 برو', 'وصلني الجهاز بأسبوعين فقط، مغلق وبتغليف أصلي. تجربة ممتازة.', 'https://images.unsplash.com/photo-1592286927505-1def25115558?w=400');
+    ins.run('سارة من حلب', 'لابتوب ماك بوك', 'وصل اللابتوب بحالة ممتازة، فريق وصلني محترف جداً في التعامل والرد.', 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=400');
+    ins.run('محمد من اللاذقية', 'ساعة أبل', 'الشحنة وصلت خلال 3 أسابيع، والسعر أقل من المتوقع. أنصح الجميع.', 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=400');
+    ins.run('رنا من حمص', 'كاميرا كانون', 'أفضل خدمة شحن جربتها، تتبع دقيق وشفافية كاملة بالأسعار.', 'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=400');
   }
 }
 seed();
 
-// ============ Helpers ============
+// ==================== Middleware ====================
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '12mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
-
-function maskName(name) {
-  if (!name) return 'م***';
-  const parts = name.trim().split(/\s+/);
-  const first = parts[0] || '';
-  const last = parts[parts.length - 1] || '';
-  if (first.length <= 1) return '*'.repeat(3);
-  return first.charAt(0) + '***' + (last && last !== first ? last.charAt(0) : '');
-}
-
-function effectivePrice(p) {
-  if (!p) return 0;
-  if (p.discount_active && p.discount_percent > 0) {
-    return p.price_usd * (1 - p.discount_percent / 100);
-  }
-  return p.price_usd;
-}
 
 function auth(req, res, next) {
   const h = req.headers.authorization;
@@ -295,41 +207,33 @@ function auth(req, res, next) {
     const u = db.prepare('SELECT id, email, phone, name, is_admin, banned FROM accounts WHERE id = ?').get(d.id);
     if (!u) return res.status(401).json({ detail: 'حساب غير موجود' });
     if (u.banned) return res.status(403).json({ detail: 'هذا الحساب محظور' });
-    req.user = u;
-    next();
-  } catch (e) {
-    return res.status(401).json({ detail: 'انتهت الجلسة' });
-  }
+    req.user = u; next();
+  } catch (e) { return res.status(401).json({ detail: 'انتهت الجلسة' }); }
 }
-
 function adminOnly(req, res, next) {
   if (!req.user || !req.user.is_admin) return res.status(403).json({ detail: 'صلاحيات المدير مطلوبة' });
   next();
 }
+function maskName(name) {
+  if (!name) return 'م***';
+  const p = name.trim().split(/\s+/);
+  const f = p[0] || '', l = p[p.length - 1] || '';
+  if (f.length <= 1) return '***';
+  return f.charAt(0) + '***' + (l && l !== f ? l.charAt(0) : '');
+}
 
-// ============ التحقق ============
+// ==================== التحقق ====================
 const RE_EMAIL = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i;
 const RE_PHONE = /^09\d{8}$/;
 const RE_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_\-+=\[\]{};:'",.<>\/?\\|`~]).{8,}$/;
 
-function validateRegister({ email, phone, password }) {
-  if (!email) return 'البريد الإلكتروني مطلوب';
-  if (!RE_EMAIL.test(email)) return 'البريد يجب أن ينتهي بـ @gmail.com';
-  if (!phone) return 'رقم الهاتف مطلوب';
-  if (!RE_PHONE.test(phone)) return 'رقم الهاتف يجب أن يبدأ بـ 09 ويتكون من 10 أرقام';
-  if (!password) return 'كلمة المرور مطلوبة';
-  if (password.length < 8) return 'كلمة المرور 8 أحرف على الأقل';
-  if (!RE_PASSWORD.test(password)) return 'كلمة المرور يجب أن تحتوي على أحرف وأرقام ورموز';
-  return null;
-}
-
-// ============ المصادقة ============
+// ==================== المصادقة ====================
 app.post('/api/auth/register', (req, res) => {
   const { name, email, phone, password } = req.body;
-  const err = validateRegister({ email, phone, password });
-  if (err) return res.status(400).json({ detail: err });
-  if (!name || name.trim().length < 3) return res.status(400).json({ detail: 'الاسم الثلاثي مطلوب (3 أحرف على الأقل)' });
-
+  if (!name || name.trim().length < 3) return res.status(400).json({ detail: 'الاسم مطلوب' });
+  if (!email || !RE_EMAIL.test(email)) return res.status(400).json({ detail: 'البريد يجب أن ينتهي بـ @gmail.com' });
+  if (!phone || !RE_PHONE.test(phone)) return res.status(400).json({ detail: 'رقم الهاتف 10 أرقام يبدأ بـ 09' });
+  if (!password || !RE_PASSWORD.test(password)) return res.status(400).json({ detail: 'كلمة المرور: 8+ أحرف وأرقام ورموز' });
   try {
     const hash = bcrypt.hashSync(password, 10);
     const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase()) ? 1 : 0;
@@ -340,9 +244,8 @@ app.post('/api/auth/register', (req, res) => {
     res.json({ token, user: u });
   } catch (e) {
     if (e.code && e.code.startsWith('SQLITE_CONSTRAINT')) {
-      if (e.message.includes('email')) return res.status(400).json({ detail: 'هذا البريد مسجل مسبقاً' });
-      if (e.message.includes('phone')) return res.status(400).json({ detail: 'هذا الهاتف مسجل مسبقاً' });
-      return res.status(400).json({ detail: 'البيانات مستخدمة مسبقاً' });
+      if (e.message.includes('email')) return res.status(400).json({ detail: 'البريد مسجل مسبقاً' });
+      if (e.message.includes('phone')) return res.status(400).json({ detail: 'الهاتف مسجل مسبقاً' });
     }
     res.status(500).json({ detail: 'خطأ في التسجيل' });
   }
@@ -350,7 +253,7 @@ app.post('/api/auth/register', (req, res) => {
 
 app.post('/api/auth/login', (req, res) => {
   const { identifier, password } = req.body;
-  if (!identifier || !password) return res.status(400).json({ detail: 'املأ جميع الحقول' });
+  if (!identifier || !password) return res.status(400).json({ detail: 'املأ الحقول' });
   const u = db.prepare('SELECT * FROM accounts WHERE email = ? OR phone = ?').get(identifier.toLowerCase(), identifier);
   if (!u) return res.status(401).json({ detail: 'بيانات الدخول غير صحيحة' });
   if (u.banned) return res.status(403).json({ detail: 'هذا الحساب محظور' });
@@ -361,175 +264,179 @@ app.post('/api/auth/login', (req, res) => {
 
 app.get('/api/auth/me', auth, (req, res) => res.json({ user: req.user }));
 
-// ============ الأقسام ============
-app.get('/api/categories', (req, res) => {
-  res.json(db.prepare('SELECT * FROM categories WHERE active = 1 ORDER BY sort_order, id').all());
+// ==================== البيانات العامة ====================
+app.get('/api/public/data', (req, res) => {
+  const content = {}; db.prepare('SELECT * FROM content').all().forEach(r => content[r.key] = r.value);
+  const pricing = {}; db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
+  const countries = db.prepare('SELECT * FROM countries WHERE active = 1 ORDER BY sort_order').all();
+  const regions = db.prepare('SELECT r.*, c.name_ar as country_name FROM regions r JOIN countries c ON r.country_id = c.id WHERE r.active = 1 ORDER BY r.name_ar').all();
+  const stores = db.prepare('SELECT * FROM stores WHERE active = 1 ORDER BY sort_order').all();
+  const wallets = db.prepare('SELECT * FROM wallets WHERE active = 1 ORDER BY sort_order').all();
+  const testimonials = db.prepare('SELECT * FROM testimonials WHERE active = 1 ORDER BY sort_order, id DESC').all();
+  res.json({ content, pricing, countries, regions, stores, wallets, testimonials, status_labels: STATUS_LABELS });
 });
 
-app.get('/api/admin/categories', auth, adminOnly, (req, res) => {
-  res.json(db.prepare('SELECT * FROM categories ORDER BY sort_order, id').all());
-});
+// ==================== حساب السعر ====================
+app.post('/api/quote', (req, res) => {
+  const { product_price_usd, quantity = 1, weight_kg, shipping_method = 'air', region_id } = req.body;
 
-app.post('/api/admin/categories', auth, adminOnly, (req, res) => {
-  const { name_ar, icon, sort_order } = req.body;
-  if (!name_ar) return res.status(400).json({ detail: 'اسم القسم مطلوب' });
-  const r = db.prepare('INSERT INTO categories (name_ar, icon, sort_order) VALUES (?, ?, ?)')
-    .run(name_ar.trim(), icon || '📦', sort_order || 0);
-  res.json({ success: true, id: r.lastInsertRowid });
-});
+  if (!product_price_usd || product_price_usd <= 0) return res.status(400).json({ detail: 'سعر المنتج مطلوب' });
+  if (!weight_kg || weight_kg <= 0) return res.status(400).json({ detail: 'الوزن مطلوب' });
+  if (!region_id) return res.status(400).json({ detail: 'المحافظة مطلوبة' });
 
-app.put('/api/admin/categories/:id', auth, adminOnly, (req, res) => {
-  const { name_ar, icon, sort_order, active } = req.body;
-  db.prepare('UPDATE categories SET name_ar=?, icon=?, sort_order=?, active=? WHERE id=?')
-    .run(name_ar, icon, sort_order, active ? 1 : 0, req.params.id);
-  res.json({ success: true });
-});
+  const pricing = {}; db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
+  const region = db.prepare('SELECT * FROM regions WHERE id = ?').get(region_id);
+  if (!region) return res.status(400).json({ detail: 'المحافظة غير موجودة' });
 
-app.delete('/api/admin/categories/:id', auth, adminOnly, (req, res) => {
-  db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
-});
+  const qty = Math.max(1, parseInt(quantity));
+  const weight = Math.max(weight_kg, pricing.min_weight_kg || 0.5);
+  const totalWeight = weight * qty;
 
-// ============ المنتجات ============
-app.get('/api/products', (req, res) => {
-  const { category_id, search, discount } = req.query;
-  let sql = `SELECT p.*, c.name_ar as category_name FROM products p
-             JOIN categories c ON p.category_id = c.id WHERE p.active = 1`;
-  const params = [];
-  if (category_id) { sql += ' AND p.category_id = ?'; params.push(category_id); }
-  if (search) { sql += ' AND (p.title LIKE ? OR p.description LIKE ?)'; params.push('%' + search + '%', '%' + search + '%'); }
-  if (discount === '1') { sql += ' AND p.discount_active = 1 AND p.discount_percent > 0'; }
-  sql += ' ORDER BY p.created_at DESC';
-  const products = db.prepare(sql).all(...params);
+  const productCost = product_price_usd * qty;
+  const perKg = shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
+  const shippingCost = totalWeight * perKg;
+  const customs = productCost * (pricing.customs_percent / 100);
+  const commission = productCost * (pricing.commission_percent / 100);
+  const deliveryFee = region.delivery_fee_usd || 0;
 
-  products.forEach(p => {
-    const st = db.prepare('SELECT AVG(rating) avg, COUNT(*) count FROM reviews WHERE product_id = ?').get(p.id);
-    p.rating_avg = st.avg ? parseFloat(st.avg.toFixed(1)) : 0;
-    p.rating_count = st.count;
-    p.effective_price = parseFloat(effectivePrice(p).toFixed(2));
-    p.discount_amount = p.discount_active ? parseFloat((p.price_usd - p.effective_price).toFixed(2)) : 0;
+  const total = productCost + shippingCost + customs + commission + deliveryFee;
+
+  res.json({
+    product_cost: +productCost.toFixed(2),
+    shipping_cost: +shippingCost.toFixed(2),
+    customs: +customs.toFixed(2),
+    commission: +commission.toFixed(2),
+    delivery_fee: +deliveryFee.toFixed(2),
+    total_usd: +total.toFixed(2),
+    total_usdt: +(total * (pricing.usdt_rate || 1)).toFixed(2),
+    usdt_rate: pricing.usdt_rate || 1,
+    total_weight_kg: +totalWeight.toFixed(2),
+    per_kg_used: perKg
   });
-  res.json(products);
 });
 
-app.get('/api/products/:id', (req, res) => {
-  const p = db.prepare(`SELECT p.*, c.name_ar as category_name FROM products p
-                        JOIN categories c ON p.category_id = c.id WHERE p.id = ?`).get(req.params.id);
-  if (!p) return res.status(404).json({ detail: 'المنتج غير موجود' });
-  const st = db.prepare('SELECT AVG(rating) avg, COUNT(*) count FROM reviews WHERE product_id = ?').get(p.id);
-  p.rating_avg = st.avg ? parseFloat(st.avg.toFixed(1)) : 0;
-  p.rating_count = st.count;
-  p.effective_price = parseFloat(effectivePrice(p).toFixed(2));
-  p.discount_amount = p.discount_active ? parseFloat((p.price_usd - p.effective_price).toFixed(2)) : 0;
-  const reviews = db.prepare('SELECT id, user_name, rating, comment, created_at FROM reviews WHERE product_id = ? ORDER BY created_at DESC').all(p.id);
-  p.reviews = reviews.map(r => ({ ...r, user_name: maskName(r.user_name) }));
-  res.json(p);
-});
+// ==================== إنشاء طلب ====================
+function genOrderNumber() {
+  const d = new Date();
+  const ymd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  const rnd = Math.floor(1000 + Math.random() * 9000);
+  return 'WS-' + ymd + '-' + rnd;
+}
 
-// ============ التقييمات ============
-app.post('/api/reviews', auth, (req, res) => {
-  const { product_id, rating, comment } = req.body;
-  if (!product_id || !rating || rating < 1 || rating > 5) return res.status(400).json({ detail: 'بيانات غير صحيحة' });
-  const name = req.user.name || 'مستخدم';
-  db.prepare('INSERT INTO reviews (product_id, user_id, user_name, rating, comment) VALUES (?, ?, ?, ?, ?)')
-    .run(product_id, req.user.id, name, rating, comment || '');
-  res.json({ success: true });
-});
-
-// ============ شركات الشحن ============
-app.get('/api/shipping-companies', (req, res) => {
-  res.json(db.prepare('SELECT * FROM shipping_companies WHERE active = 1 ORDER BY sort_order, id').all());
-});
-
-app.get('/api/admin/shipping-companies', auth, adminOnly, (req, res) => {
-  res.json(db.prepare('SELECT * FROM shipping_companies ORDER BY sort_order, id').all());
-});
-
-app.post('/api/admin/shipping-companies', auth, adminOnly, (req, res) => {
-  const { name, sort_order } = req.body;
-  if (!name) return res.status(400).json({ detail: 'اسم الشركة مطلوب' });
-  const r = db.prepare('INSERT INTO shipping_companies (name, sort_order) VALUES (?, ?)')
-    .run(name.trim(), sort_order || 0);
-  res.json({ success: true, id: r.lastInsertRowid });
-});
-
-app.put('/api/admin/shipping-companies/:id', auth, adminOnly, (req, res) => {
-  const { name, sort_order, active } = req.body;
-  db.prepare('UPDATE shipping_companies SET name=?, sort_order=?, active=? WHERE id=?')
-    .run(name, sort_order, active ? 1 : 0, req.params.id);
-  res.json({ success: true });
-});
-
-app.delete('/api/admin/shipping-companies/:id', auth, adminOnly, (req, res) => {
-  db.prepare('DELETE FROM shipping_companies WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
-});
-
-// ============ الطلبات ============
 app.post('/api/orders', auth, (req, res) => {
-  const { items, receiver_full_name, receiver_phone, region, shipping_company_id, tx_ref, wallet_address } = req.body;
+  const {
+    country_id, region_id, receiver_name, receiver_phone, full_address,
+    store_name, product_title, product_url,
+    product_price_usd, quantity = 1, weight_kg,
+    shipping_method = 'air', wallet_network, tx_ref, tx_proof_url
+  } = req.body;
 
-  if (!items || items.length === 0) return res.status(400).json({ detail: 'السلة فارغة' });
-  if (!receiver_full_name || receiver_full_name.trim().split(/\s+/).length < 3)
+  // التحقق
+  if (!receiver_name || receiver_name.trim().split(/\s+/).length < 3)
     return res.status(400).json({ detail: 'الاسم الثلاثي للمستلم مطلوب' });
   if (!receiver_phone || !RE_PHONE.test(receiver_phone))
-    return res.status(400).json({ detail: 'رقم هاتف المستلم يجب أن يبدأ بـ 09 ويتكون من 10 أرقام' });
-  if (!region || region.trim().length < 2)
-    return res.status(400).json({ detail: 'المنطقة مطلوبة' });
-  if (!shipping_company_id) return res.status(400).json({ detail: 'شركة الشحن مطلوبة' });
-  if (!tx_ref || tx_ref.trim().length < 6)
-    return res.status(400).json({ detail: 'رقم عملية التحويل (TXID) مطلوب' });
+    return res.status(400).json({ detail: 'رقم هاتف المستلم 10 أرقام يبدأ بـ 09' });
+  if (!full_address || full_address.trim().length < 5)
+    return res.status(400).json({ detail: 'العنوان الكامل مطلوب' });
+  if (!product_title || !product_url)
+    return res.status(400).json({ detail: 'عنوان المنتج ورابطه مطلوبان' });
+  if (!product_price_usd || !weight_kg)
+    return res.status(400).json({ detail: 'سعر المنتج والوزن مطلوبان' });
+  if (!region_id) return res.status(400).json({ detail: 'المحافظة مطلوبة' });
 
-  const company = db.prepare('SELECT * FROM shipping_companies WHERE id = ? AND active = 1').get(shipping_company_id);
-  if (!company) return res.status(400).json({ detail: 'شركة شحن غير صالحة' });
+  const pricing = {}; db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
+  const region = db.prepare('SELECT * FROM regions WHERE id = ?').get(region_id);
+  if (!region) return res.status(400).json({ detail: 'المحافظة غير موجودة' });
+  const country = db.prepare('SELECT * FROM countries WHERE id = ?').get(country_id || region.country_id);
 
-  let subtotal = 0, shippingTotal = 0, discountTotal = 0;
-  const enrichedItems = items.map(it => {
-    const prod = db.prepare('SELECT * FROM products WHERE id = ?').get(it.id);
-    if (!prod) throw new Error('منتج غير موجود');
-    const unit = effectivePrice(prod);
-    const linePrice = unit * it.quantity;
-    const lineShipping = (prod.shipping_fee_usd || 0) * it.quantity;
-    subtotal += linePrice;
-    shippingTotal += lineShipping;
-    if (prod.discount_active) discountTotal += (prod.price_usd - unit) * it.quantity;
-    return {
-      id: prod.id, title: prod.title, price_usd: unit,
-      original_price_usd: prod.price_usd,
-      shipping_fee_usd: prod.shipping_fee_usd || 0,
-      quantity: it.quantity,
-      line_total: parseFloat((linePrice + lineShipping).toFixed(2))
-    };
-  });
+  const qty = Math.max(1, parseInt(quantity));
+  const weight = Math.max(weight_kg, pricing.min_weight_kg || 0.5);
+  const totalWeight = weight * qty;
+  const productCost = product_price_usd * qty;
+  const perKg = shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
+  const shippingCost = totalWeight * perKg;
+  const customs = productCost * (pricing.customs_percent / 100);
+  const commission = productCost * (pricing.commission_percent / 100);
+  const deliveryFee = region.delivery_fee_usd || 0;
+  const total = productCost + shippingCost + customs + commission + deliveryFee;
 
-  const total = subtotal + shippingTotal;
+  const orderNumber = genOrderNumber();
   const userName = req.user.name || 'عميل';
 
   const r = db.prepare(`INSERT INTO orders
-    (user_id, user_name, receiver_full_name, receiver_phone, region,
-     shipping_company_id, shipping_company_name, items_json,
-     subtotal_usd, shipping_total_usd, discount_total_usd, total_usd,
-     wallet_address, tx_ref, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    (order_number, user_id, user_name, country_id, region_id,
+     receiver_name, receiver_phone, full_address,
+     store_name, product_title, product_url,
+     product_price_usd, quantity, weight_kg, shipping_method,
+     shipping_cost_usd, customs_usd, commission_usd, delivery_fee_usd, total_usd,
+     wallet_network, tx_ref, tx_proof_url, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(
-      req.user.id, userName,
-      receiver_full_name.trim(), receiver_phone, region.trim(),
-      company.id, company.name, JSON.stringify(enrichedItems),
-      parseFloat(subtotal.toFixed(2)), parseFloat(shippingTotal.toFixed(2)),
-      parseFloat(discountTotal.toFixed(2)), parseFloat(total.toFixed(2)),
-      wallet_address || '', tx_ref.trim(), 'awaiting_confirmation'
+      orderNumber, req.user.id, userName, country ? country.id : null, region.id,
+      receiver_name.trim(), receiver_phone, full_address.trim(),
+      store_name || '', product_title.trim(), product_url.trim(),
+      product_price_usd, qty, weight, shipping_method,
+      +shippingCost.toFixed(2), +customs.toFixed(2), +commission.toFixed(2), +deliveryFee.toFixed(2), +total.toFixed(2),
+      wallet_network || '', tx_ref || '', tx_proof_url || '', 'awaiting_payment'
     );
 
-  res.json({ success: true, orderId: r.lastInsertRowid });
+  const orderId = r.lastInsertRowid;
+  db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
+    .run(orderId, 'awaiting_payment', 'تم إنشاء الطلب بنجاح — بانتظار الدفع بالـ USDT');
+  db.prepare('INSERT INTO notifications (user_id, order_id, title, body) VALUES (?, ?, ?, ?)')
+    .run(req.user.id, orderId, 'تم إنشاء طلبك', `طلبك #${orderNumber} بانتظار تأكيد الدفع`);
+
+  res.json({ success: true, order_id: orderId, order_number: orderNumber, total_usd: +total.toFixed(2) });
 });
 
+// ==================== طلباتي ====================
 app.get('/api/orders/mine', auth, (req, res) => {
-  const orders = db.prepare('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC').all(req.user.id);
-  orders.forEach(o => { o.items = JSON.parse(o.items_json); });
+  const orders = db.prepare(`SELECT o.*, r.name_ar as region_name, c.name_ar as country_name
+    FROM orders o
+    LEFT JOIN regions r ON o.region_id = r.id
+    LEFT JOIN countries c ON o.country_id = c.id
+    WHERE o.user_id = ? ORDER BY o.created_at DESC`).all(req.user.id);
+  orders.forEach(o => { o.tracking = db.prepare('SELECT * FROM order_tracking WHERE order_id = ? ORDER BY created_at ASC').all(o.id); });
   res.json(orders);
 });
 
-// ============ الدعم ============
+app.get('/api/orders/:id', auth, (req, res) => {
+  const o = db.prepare(`SELECT o.*, r.name_ar as region_name, c.name_ar as country_name
+    FROM orders o
+    LEFT JOIN regions r ON o.region_id = r.id
+    LEFT JOIN countries c ON o.country_id = c.id
+    WHERE o.id = ?`).get(req.params.id);
+  if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
+  if (o.user_id !== req.user.id && !req.user.is_admin) return res.status(403).json({ detail: 'غير مصرح' });
+  o.tracking = db.prepare('SELECT * FROM order_tracking WHERE order_id = ? ORDER BY created_at ASC').all(o.id);
+  res.json(o);
+});
+
+// تقديم إثبات الدفع
+app.post('/api/orders/:id/submit-payment', auth, (req, res) => {
+  const { wallet_network, tx_ref, tx_proof_url } = req.body;
+  const o = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
+  if (!tx_ref || tx_ref.trim().length < 6) return res.status(400).json({ detail: 'رقم التحويل (TxID) مطلوب' });
+  db.prepare('UPDATE orders SET wallet_network=?, tx_ref=?, tx_proof_url=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run(wallet_network || '', tx_ref.trim(), tx_proof_url || '', req.params.id);
+  db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
+    .run(o.id, 'awaiting_payment', 'تم إرسال إثبات الدفع — بانتظار مراجعة الإدارة');
+  db.prepare('INSERT INTO notifications (user_id, order_id, title, body) VALUES (?, ?, ?, ?)')
+    .run(req.user.id, o.id, 'تم استلام إثبات الدفع', 'سنراجع التحويل ونؤكد الطلب قريباً');
+  res.json({ success: true });
+});
+
+// ==================== الإشعارات ====================
+app.get('/api/notifications', auth, (req, res) => {
+  res.json(db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30').all(req.user.id));
+});
+app.post('/api/notifications/read-all', auth, (req, res) => {
+  db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?').run(req.user.id);
+  res.json({ success: true });
+});
+
+// ==================== الدعم ====================
 app.post('/api/support', auth, (req, res) => {
   const { message } = req.body;
   if (!message || !message.trim()) return res.status(400).json({ detail: 'الرسالة مطلوبة' });
@@ -538,142 +445,235 @@ app.post('/api/support', auth, (req, res) => {
     .run(req.user.id, userName, message.trim());
   res.json({ success: true, id: r.lastInsertRowid });
 });
-
 app.get('/api/support/mine', auth, (req, res) => {
   res.json(db.prepare('SELECT * FROM support_messages WHERE user_id = ? ORDER BY created_at ASC').all(req.user.id));
 });
 
-// ============ الإعدادات العامة ============
-app.get('/api/settings', (req, res) => {
-  const rows = db.prepare('SELECT * FROM site_settings').all();
-  const obj = {};
-  rows.forEach(r => obj[r.key] = r.value);
-  res.json(obj);
-});
-
-// ============ لوحة الأدمن ============
+// ==================== لوحة الأدمن ====================
 app.get('/api/admin/stats', auth, adminOnly, (req, res) => {
   res.json({
     total_orders: db.prepare('SELECT COUNT(*) c FROM orders').get().c,
-    pending_orders: db.prepare("SELECT COUNT(*) c FROM orders WHERE status = 'awaiting_confirmation'").get().c,
-    active_products: db.prepare('SELECT COUNT(*) c FROM products WHERE active = 1').get().c,
+    pending_orders: db.prepare("SELECT COUNT(*) c FROM orders WHERE status = 'awaiting_payment'").get().c,
+    in_progress: db.prepare("SELECT COUNT(*) c FROM orders WHERE status IN ('payment_received','purchased','warehouse_foreign','international_shipping','arrived_syria','out_for_delivery')").get().c,
+    delivered: db.prepare("SELECT COUNT(*) c FROM orders WHERE status = 'delivered'").get().c,
     open_support: db.prepare("SELECT COUNT(*) c FROM support_messages WHERE status = 'open'").get().c,
     total_accounts: db.prepare('SELECT COUNT(*) c FROM accounts').get().c,
-    total_revenue: db.prepare("SELECT COALESCE(SUM(total_usd),0) s FROM orders WHERE status IN ('accepted','shipped','delivered')").get().s
+    total_revenue: db.prepare("SELECT COALESCE(SUM(total_usd),0) s FROM orders WHERE status IN ('delivered','out_for_delivery','arrived_syria')").get().s
   });
 });
 
+// الطلبات
 app.get('/api/admin/orders', auth, adminOnly, (req, res) => {
-  const orders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all();
-  orders.forEach(o => { o.items = JSON.parse(o.items_json); });
+  const orders = db.prepare(`SELECT o.*, r.name_ar as region_name FROM orders o
+    LEFT JOIN regions r ON o.region_id = r.id ORDER BY o.created_at DESC`).all();
+  orders.forEach(o => { o.tracking = db.prepare('SELECT * FROM order_tracking WHERE order_id = ? ORDER BY created_at ASC').all(o.id); });
   res.json(orders);
 });
 
 app.put('/api/admin/orders/:id', auth, adminOnly, (req, res) => {
-  const { status } = req.body;
-  const valid = ['awaiting_confirmation', 'accepted', 'rejected', 'shipped', 'delivered'];
-  if (!valid.includes(status)) return res.status(400).json({ detail: 'حالة غير صحيحة' });
-  db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, req.params.id);
+  const { status, admin_adjusted_usd, notes, tracking_note } = req.body;
+  const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+  if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
+
+  if (status && !STATUS_LABELS[status]) return res.status(400).json({ detail: 'حالة غير صحيحة' });
+
+  const newAdjusted = admin_adjusted_usd !== undefined ? admin_adjusted_usd : o.admin_adjusted_usd;
+  const newNotes = notes !== undefined ? notes : o.notes;
+
+  db.prepare(`UPDATE orders SET status = COALESCE(?, status), admin_adjusted_usd = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+    .run(status || null, newAdjusted, newNotes, req.params.id);
+
+  if (status && status !== o.status) {
+    db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
+      .run(o.id, status, tracking_note || STATUS_LABELS[status]);
+    db.prepare('INSERT INTO notifications (user_id, order_id, title, body) VALUES (?, ?, ?, ?)')
+      .run(o.user_id, o.id, 'تحديث حالة الطلب', `طلبك #${o.order_number}: ${STATUS_LABELS[status]}`);
+  }
+
   res.json({ success: true });
 });
 
-app.get('/api/admin/products', auth, adminOnly, (req, res) => {
-  res.json(db.prepare(`SELECT p.*, c.name_ar as category_name FROM products p
-                       JOIN categories c ON p.category_id = c.id
-                       ORDER BY p.id DESC`).all());
+app.delete('/api/admin/orders/:id', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
 });
 
-app.post('/api/admin/products', auth, adminOnly, (req, res) => {
-  const { category_id, title, description, notes, price_usd, shipping_fee_usd, image_url, stock, discount_percent, discount_active, active } = req.body;
-  if (!title || !price_usd || !category_id) return res.status(400).json({ detail: 'العنوان والسعر والقسم مطلوبة' });
-  const r = db.prepare(`INSERT INTO products
-    (category_id, title, description, notes, price_usd, shipping_fee_usd, image_url, stock, discount_percent, discount_active, active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(category_id, title, description || '', notes || '', price_usd, shipping_fee_usd || 0,
-         image_url || '', stock || 0, discount_percent || 0, discount_active ? 1 : 0, active !== false ? 1 : 0);
+// التسعير
+app.get('/api/admin/pricing', auth, adminOnly, (req, res) => {
+  const rows = db.prepare('SELECT * FROM pricing').all();
+  const obj = {}; rows.forEach(r => obj[r.key] = r.value);
+  res.json(obj);
+});
+app.put('/api/admin/pricing', auth, adminOnly, (req, res) => {
+  const upsert = db.prepare('INSERT OR REPLACE INTO pricing (key, value) VALUES (?, ?)');
+  Object.keys(req.body).forEach(k => upsert.run(k, String(req.body[k])));
+  res.json({ success: true });
+});
+
+// المحافظ
+app.get('/api/admin/wallets', auth, adminOnly, (req, res) => {
+  res.json(db.prepare('SELECT * FROM wallets ORDER BY sort_order').all());
+});
+app.post('/api/admin/wallets', auth, adminOnly, (req, res) => {
+  const { network, address, sort_order } = req.body;
+  if (!network || !address) return res.status(400).json({ detail: 'الشبكة والعنوان مطلوبان' });
+  const r = db.prepare('INSERT INTO wallets (network, address, sort_order) VALUES (?, ?, ?)')
+    .run(network, address, sort_order || 0);
   res.json({ success: true, id: r.lastInsertRowid });
 });
-
-app.put('/api/admin/products/:id', auth, adminOnly, (req, res) => {
-  const { category_id, title, description, notes, price_usd, shipping_fee_usd, image_url, stock, discount_percent, discount_active, active } = req.body;
-  db.prepare(`UPDATE products SET category_id=?, title=?, description=?, notes=?, price_usd=?,
-    shipping_fee_usd=?, image_url=?, stock=?, discount_percent=?, discount_active=?, active=?
-    WHERE id=?`)
-    .run(category_id, title, description, notes, price_usd, shipping_fee_usd, image_url, stock,
-         discount_percent || 0, discount_active ? 1 : 0, active ? 1 : 0, req.params.id);
+app.put('/api/admin/wallets/:id', auth, adminOnly, (req, res) => {
+  const { network, address, active, sort_order } = req.body;
+  db.prepare('UPDATE wallets SET network=?, address=?, active=?, sort_order=? WHERE id=?')
+    .run(network, address, active ? 1 : 0, sort_order || 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/wallets/:id', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM wallets WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 
-app.delete('/api/admin/products/:id', auth, adminOnly, (req, res) => {
-  db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
+// المتاجر
+app.get('/api/admin/stores', auth, adminOnly, (req, res) => {
+  res.json(db.prepare('SELECT * FROM stores ORDER BY sort_order').all());
+});
+app.post('/api/admin/stores', auth, adminOnly, (req, res) => {
+  const { name_ar, name_en, icon, url_hint, sort_order } = req.body;
+  if (!name_ar || !name_en) return res.status(400).json({ detail: 'الاسم العربي والإنجليزي مطلوبان' });
+  const r = db.prepare('INSERT INTO stores (name_ar, name_en, icon, url_hint, sort_order) VALUES (?, ?, ?, ?, ?)')
+    .run(name_ar, name_en, icon || '🛒', url_hint || '', sort_order || 0);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/stores/:id', auth, adminOnly, (req, res) => {
+  const { name_ar, name_en, icon, url_hint, active, sort_order } = req.body;
+  db.prepare('UPDATE stores SET name_ar=?, name_en=?, icon=?, url_hint=?, active=?, sort_order=? WHERE id=?')
+    .run(name_ar, name_en, icon, url_hint, active ? 1 : 0, sort_order || 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/stores/:id', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM stores WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 
-app.get('/api/admin/reviews', auth, adminOnly, (req, res) => {
-  res.json(db.prepare(`SELECT r.*, p.title as product_title FROM reviews r
-                       JOIN products p ON r.product_id = p.id
-                       ORDER BY r.created_at DESC`).all());
+// إثباتات التسليم
+app.get('/api/admin/testimonials', auth, adminOnly, (req, res) => {
+  res.json(db.prepare('SELECT * FROM testimonials ORDER BY sort_order, id DESC').all());
 });
-
-app.delete('/api/admin/reviews/:id', auth, adminOnly, (req, res) => {
-  db.prepare('DELETE FROM reviews WHERE id = ?').run(req.params.id);
+app.post('/api/admin/testimonials', auth, adminOnly, (req, res) => {
+  const { customer_name, title, description, image_url, video_url, sort_order } = req.body;
+  const r = db.prepare('INSERT INTO testimonials (customer_name, title, description, image_url, video_url, sort_order) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(customer_name || '', title || '', description || '', image_url || '', video_url || '', sort_order || 0);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/testimonials/:id', auth, adminOnly, (req, res) => {
+  const { customer_name, title, description, image_url, video_url, active, sort_order } = req.body;
+  db.prepare('UPDATE testimonials SET customer_name=?, title=?, description=?, image_url=?, video_url=?, active=?, sort_order=? WHERE id=?')
+    .run(customer_name, title, description, image_url, video_url, active ? 1 : 0, sort_order || 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/testimonials/:id', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM testimonials WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 
+// المحتوى
+app.get('/api/admin/content', auth, adminOnly, (req, res) => {
+  const rows = db.prepare('SELECT * FROM content').all();
+  const obj = {}; rows.forEach(r => obj[r.key] = r.value);
+  res.json(obj);
+});
+app.put('/api/admin/content', auth, adminOnly, (req, res) => {
+  const upsert = db.prepare('INSERT OR REPLACE INTO content (key, value) VALUES (?, ?)');
+  Object.keys(req.body).forEach(k => upsert.run(k, String(req.body[k] || '')));
+  res.json({ success: true });
+});
+
+// الدول والمحافظ
+app.get('/api/admin/countries', auth, adminOnly, (req, res) => {
+  const countries = db.prepare('SELECT * FROM countries ORDER BY sort_order').all();
+  countries.forEach(c => { c.regions = db.prepare('SELECT * FROM regions WHERE country_id = ? ORDER BY name_ar').all(c.id); });
+  res.json(countries);
+});
+app.post('/api/admin/countries', auth, adminOnly, (req, res) => {
+  const { name_ar, name_en, flag, sort_order } = req.body;
+  if (!name_ar || !name_en) return res.status(400).json({ detail: 'الاسم مطلوب' });
+  const r = db.prepare('INSERT INTO countries (name_ar, name_en, flag, sort_order) VALUES (?, ?, ?, ?)')
+    .run(name_ar, name_en, flag || '🌐', sort_order || 0);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/countries/:id', auth, adminOnly, (req, res) => {
+  const { name_ar, name_en, flag, active, sort_order } = req.body;
+  db.prepare('UPDATE countries SET name_ar=?, name_en=?, flag=?, active=?, sort_order=? WHERE id=?')
+    .run(name_ar, name_en, flag, active ? 1 : 0, sort_order || 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/countries/:id', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM countries WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
+app.post('/api/admin/regions', auth, adminOnly, (req, res) => {
+  const { country_id, name_ar, delivery_fee_usd } = req.body;
+  if (!country_id || !name_ar) return res.status(400).json({ detail: 'الدولة والاسم مطلوبان' });
+  const r = db.prepare('INSERT INTO regions (country_id, name_ar, delivery_fee_usd) VALUES (?, ?, ?)')
+    .run(country_id, name_ar, delivery_fee_usd || 0);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/regions/:id', auth, adminOnly, (req, res) => {
+  const { name_ar, delivery_fee_usd, active } = req.body;
+  db.prepare('UPDATE regions SET name_ar=?, delivery_fee_usd=?, active=? WHERE id=?')
+    .run(name_ar, delivery_fee_usd, active ? 1 : 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/regions/:id', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM regions WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// الحسابات
 app.get('/api/admin/accounts', auth, adminOnly, (req, res) => {
   res.json(db.prepare('SELECT id, email, phone, name, banned, is_admin, created_at FROM accounts ORDER BY id DESC').all());
 });
-
 app.put('/api/admin/accounts/:id', auth, adminOnly, (req, res) => {
-  const { banned } = req.body;
-  db.prepare('UPDATE accounts SET banned = ? WHERE id = ?').run(banned ? 1 : 0, req.params.id);
+  db.prepare('UPDATE accounts SET banned = ? WHERE id = ?').run(req.body.banned ? 1 : 0, req.params.id);
   res.json({ success: true });
 });
-
 app.delete('/api/admin/accounts/:id', auth, adminOnly, (req, res) => {
-  if (req.params.id == req.user.id) return res.status(400).json({ detail: 'لا يمكن حذف حسابك الحالي' });
+  if (req.params.id == req.user.id) return res.status(400).json({ detail: 'لا يمكن حذف حسابك' });
   db.prepare('DELETE FROM accounts WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 
+// الدعم
 app.get('/api/admin/support', auth, adminOnly, (req, res) => {
-  res.json(db.prepare(`SELECT s.*, a.email as user_email, a.phone as user_phone FROM support_messages s
-                       JOIN accounts a ON s.user_id = a.id
-                       ORDER BY s.created_at DESC`).all());
+  res.json(db.prepare(`SELECT s.*, a.email as user_email, a.phone as user_phone
+    FROM support_messages s JOIN accounts a ON s.user_id = a.id
+    ORDER BY s.created_at DESC`).all());
 });
-
 app.post('/api/admin/support/:id/reply', auth, adminOnly, (req, res) => {
   const { reply } = req.body;
-  if (!reply || !reply.trim()) return res.status(400).json({ detail: 'الرد مطلوب' });
-  db.prepare("UPDATE support_messages SET reply = ?, status = 'answered', replied_at = CURRENT_TIMESTAMP WHERE id = ?")
+  if (!reply) return res.status(400).json({ detail: 'الرد مطلوب' });
+  db.prepare("UPDATE support_messages SET reply=?, status='answered', replied_at=CURRENT_TIMESTAMP WHERE id=?")
     .run(reply.trim(), req.params.id);
   res.json({ success: true });
 });
 
-app.get('/api/admin/settings', auth, adminOnly, (req, res) => {
-  const rows = db.prepare('SELECT * FROM site_settings').all();
-  const obj = {};
-  rows.forEach(r => obj[r.key] = r.value);
-  res.json(obj);
-});
-
-app.put('/api/admin/settings', auth, adminOnly, (req, res) => {
-  const upsert = db.prepare('INSERT OR REPLACE INTO site_settings (key, value) VALUES (?, ?)');
-  ['usdt_wallet_address', 'network', 'announcement', 'site_name'].forEach(k => {
-    if (req.body[k] !== undefined) upsert.run(k, req.body[k]);
-  });
-  res.json({ success: true });
+// إشعار جماعي
+app.post('/api/admin/broadcast', auth, adminOnly, (req, res) => {
+  const { title, body } = req.body;
+  if (!title) return res.status(400).json({ detail: 'العنوان مطلوب' });
+  const users = db.prepare('SELECT id FROM accounts WHERE banned = 0').all();
+  const ins = db.prepare('INSERT INTO notifications (user_id, title, body) VALUES (?, ?, ?)');
+  users.forEach(u => ins.run(u.id, title, body || ''));
+  res.json({ success: true, count: users.length });
 });
 
 // SPA fallback
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('');
-  console.log('════════════════════════════════════════');
-  console.log('   🛒  أمازون سوريا — يعمل بنجاح');
+  console.log('\n════════════════════════════════════════');
+  console.log('   📦  وصلني — منصة الوساطة اللوجستية');
   console.log('   🌐  http://localhost:' + PORT);
-  console.log('   👤  الأدمن: admin@gmail.com');
-  console.log('   🔑  كلمة السر: Admin@123');
-  console.log('════════════════════════════════════════');
+  console.log('   👤  admin@gmail.com  /  Admin@123');
+  console.log('════════════════════════════════════════\n');
 });
