@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'wasalni-dev-secret-change-me';
 const DB_PATH = process.env.DB_PATH || 'wasalni.db';
 const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const GROQ_MAX_RETRIES = parseInt(process.env.GROQ_MAX_RETRIES || '4');
 const GROQ_INITIAL_DELAY_MS = parseInt(process.env.GROQ_INITIAL_DELAY_MS || '1000');
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'admin@gmail.com')
@@ -222,29 +222,136 @@ const RE_EMAIL = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i;
 const RE_PHONE = /^09\d{8}$/;
 const RE_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_\-+=\[\]{};:'",.<>\/?\\|`~]).{8,}$/;
 
-// ==================== Groq URL Analysis ====================
+// ==================== جلب صفحة المنتج ====================
+async function fetchProductPage(url) {
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+        'Cache-Control': 'no-cache'
+      },
+      redirect: 'follow'
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const html = await resp.text();
+    return html;
+  } catch (e) {
+    console.log('⚠️ فشل جلب الصفحة:', e.message);
+    return null;
+  }
+}
+
+// ==================== استخراج بيانات الصفحة ====================
+function extractPageContent(html) {
+  if (!html) return null;
+
+  const getMeta = (patterns) => {
+    for (const p of patterns) {
+      const m = html.match(p);
+      if (m && m[1]) return m[1].trim();
+    }
+    return '';
+  };
+
+  const decodeEntities = (s) => s
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&#x27;/g, "'").replace(/&hellip;/g, '…').replace(/&#x2F;/g, '/');
+
+  const ogTitle = getMeta([
+    /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i,
+    /<title[^>]*>([^<]+)<\/title>/i
+  ]);
+
+  const ogDesc = getMeta([
+    /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']twitter:description["'][^>]+content=["']([^"']+)["']/i
+  ]);
+
+  const ogImage = getMeta([
+    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i
+  ]);
+
+  const ogPrice = getMeta([
+    /<meta[^>]+property=["']product:price:amount["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+property=["']og:price:amount["'][^>]+content=["']([^"']+)["']/i,
+    /"price"\s*:\s*"?([\d.]+)"?/i,
+    /"priceAmount"\s*:\s*"?([\d.]+)"?/i,
+    /<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([\d,]+)/i,
+    /\$\s*([\d,]+\.?\d*)/i
+  ]);
+
+  const ogBrand = getMeta([
+    /<meta[^>]+property=["']product:brand["'][^>]+content=["']([^"']+)["']/i,
+    /"brand"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/i
+  ]);
+
+  let textContent = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z#0-9]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 4000);
+
+  return {
+    title: decodeEntities(ogTitle),
+    description: decodeEntities(ogDesc).slice(0, 800),
+    image: ogImage,
+    price: ogPrice.replace(/,/g, ''),
+    brand: decodeEntities(ogBrand),
+    text_sample: textContent
+  };
+}
+
+// ==================== تحليل الرابط عبر Groq ====================
 async function analyzeProductUrl(url) {
   if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY غير مضبوط');
 
   const endpoint = 'https://api.groq.com/openai/v1/chat/completions';
 
-  const systemPrompt = `You are a product URL analyzer. You MUST return ONLY a valid JSON object, no markdown, no code blocks, no explanation, no extra text.
+  const html = await fetchProductPage(url);
+  const pageData = extractPageContent(html);
+
+  if (!pageData || (!pageData.title && !pageData.description)) {
+    console.log('⚠️ فشل استخراج صفحة المنتج من الرابط');
+  }
+
+  const pageContext = pageData ? `
+The following data was extracted from the product page:
+
+Title: ${pageData.title || '(not found)'}
+Description: ${pageData.description || '(not found)'}
+Image URL: ${pageData.image || '(not found)'}
+Price (raw): ${pageData.price || '(not found)'}
+Brand: ${pageData.brand || '(not found)'}
+Page text sample: ${pageData.text_sample || '(not found)'}
+` : 'Could not fetch the page — use the URL itself to infer what you can.';
+
+  const systemPrompt = `You are a product URL analyzer. You receive data extracted from a product page, and you must return ONLY a valid JSON object. No markdown, no code blocks, no explanation, no extra text.
 
 Return this EXACT JSON structure:
 {
   "found": true or false,
-  "product_title": "full product name in original language",
+  "product_title": "clean product name",
   "price_usd": number (0 if unknown),
   "image_url": "direct image URL or empty string",
-  "sizes": ["list of available sizes if any, empty array otherwise"],
-  "colors": ["list of available colors if any, empty array otherwise"],
-  "weight_kg": number (estimate based on product category),
+  "sizes": ["available sizes if any, else empty array"],
+  "colors": ["available colors if any, else empty array"],
+  "weight_kg": number (estimate based on category),
   "store_name": "store name",
-  "description": "short product description",
+  "description": "short clean description",
   "confidence": "high" or "medium" or "low"
 }
 
-Weight estimation guidelines by category:
+Weight estimation guidelines:
 - Phone/tablet: 0.5 kg
 - Laptop: 2.5 kg
 - Watch/headphones: 0.4 kg
@@ -255,9 +362,20 @@ Weight estimation guidelines by category:
 - Kitchen appliance: 3 kg
 - Toy: 0.8 kg
 
-If you cannot access the URL or find the product, set "found": false and use empty/default values.`;
+Rules:
+- Extract product_title from the page title (remove store name, "Buy", "Amazon.com" etc).
+- Extract price_usd as a number. If the price is in another currency, convert approximately to USD.
+- image_url MUST be the direct image URL from "Image URL" above if present.
+- sizes: only if the product has sizes (shoes, clothing). Otherwise empty array.
+- colors: only if the product has colors. Otherwise empty array.
+- If nothing useful was found, set "found": false.
+- Set confidence to "high" if title AND price were found, "medium" if only title, "low" otherwise.`;
 
-  const userPrompt = `Analyze this product URL and return the JSON. The URL is: ${url}`;
+  const userPrompt = `URL: ${url}
+
+${pageContext}
+
+Return the JSON now.`;
 
   const body = {
     model: GROQ_MODEL,
@@ -294,6 +412,15 @@ If you cannot access the URL or find the product, set "found": false and use emp
           parsed = m ? JSON.parse(m[0]) : { found: false };
         }
 
+        if (!parsed.found && pageData && pageData.title) {
+          parsed.found = true;
+          parsed.product_title = parsed.product_title || pageData.title;
+          parsed.price_usd = parsed.price_usd || parseFloat(pageData.price) || 0;
+          parsed.image_url = parsed.image_url || pageData.image || '';
+          parsed.description = parsed.description || pageData.description || '';
+          parsed.confidence = parsed.confidence || 'medium';
+        }
+
         return {
           found: !!parsed.found,
           product_title: parsed.product_title || '',
@@ -315,7 +442,7 @@ If you cannot access the URL or find the product, set "found": false and use emp
         if (attempt < GROQ_MAX_RETRIES) {
           const delay = GROQ_INITIAL_DELAY_MS * Math.pow(2, attempt);
           const jitter = Math.floor(Math.random() * 500);
-          console.log(`⏳ محاولة ${attempt + 1} فشلت (${resp.status}) — انتظار ${delay + jitter}ms ثم إعادة المحاولة...`);
+          console.log(`⏳ محاولة ${attempt + 1} فشلت (${resp.status}) — انتظار ${delay + jitter}ms...`);
           await new Promise(r => setTimeout(r, delay + jitter));
           continue;
         }
@@ -331,7 +458,7 @@ If you cannot access the URL or find the product, set "found": false and use emp
       if (attempt < GROQ_MAX_RETRIES) {
         const delay = GROQ_INITIAL_DELAY_MS * Math.pow(2, attempt);
         const jitter = Math.floor(Math.random() * 500);
-        console.log(`⏳ خطأ شبكة — انتظار ${delay + jitter}ms ثم إعادة المحاولة...`);
+        console.log(`⏳ خطأ شبكة — انتظار ${delay + jitter}ms...`);
         await new Promise(r => setTimeout(r, delay + jitter));
         continue;
       }
