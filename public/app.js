@@ -203,11 +203,11 @@ async function renderHome() {
         <div class="radio-group">
           <div class="radio-btn">
             <input type="radio" name="ship" id="ship_air" value="air" checked onchange="calcQuote()">
-            <label for="ship_air">✈️ جوي<span class="sub">أسرع — 3 إلى 4 أسابيع</span></label>
+            <label for="ship_air">✈️ جوي<span class="sub">$5/كغ — 3 إلى 4 أسابيع</span></label>
           </div>
           <div class="radio-btn">
             <input type="radio" name="ship" id="ship_sea" value="sea" onchange="calcQuote()">
-            <label for="ship_sea">🚢 بحري<span class="sub">أرخص — 5 إلى 6 أسابيع</span></label>
+            <label for="ship_sea">🚢 بحري<span class="sub">$2/كغ — 5 إلى 6 أسابيع</span></label>
           </div>
         </div>
       </div>
@@ -290,17 +290,16 @@ async function calcQuote() {
         <h3>💰 السعر النهائي التقديري</h3>
         <div class="calc-line"><span>سعر المنتج × ${qty}</span><span class="v">$${fmt(q.product_cost)}</span></div>
         <div class="calc-line">
-          <span>الشحن (${q.total_weight_kg} كغ × $${q.per_kg_used}/كغ)</span>
+          <span>الشحن (${q.rounded_weight_kg} كغ مجبور × $${q.per_kg_used}/كغ)</span>
           <span class="v">$${fmt(q.shipping_cost)}</span>
         </div>
-        <div class="calc-line"><span>الرسوم الجمركية والتشغيلية</span><span class="v">$${fmt(q.customs)}</span></div>
-        <div class="calc-line"><span>عمولة المنصة</span><span class="v">$${fmt(q.commission)}</span></div>
-        <div class="calc-line"><span>أجرة التوصيل داخل سوريا</span><span class="v">$${fmt(q.delivery_fee)}</span></div>
+        <div class="calc-line"><span>الجمارك والخدمة (5%)</span><span class="v">$${fmt(q.customs)}</span></div>
+        <div class="calc-line"><span>التوصيل داخل سوريا</span><span class="v" style="color:#10B981">مجاني 🎉</span></div>
         <div class="calc-line total">
           <span>الإجمالي بالـ USDT</span>
           <span>${fmt(q.total_usdt)} USDT</span>
         </div>
-        <p style="font-size:12px;color:#94A3B8;margin-top:14px;line-height:1.6">⚠️ السعر تقديري — قد يتغير قليلاً حسب الوزن الفعلي ورسوم الشركة الناقلة عند الاستلام.</p>
+        <p style="font-size:12px;color:#94A3B8;margin-top:14px;line-height:1.6">📏 ملاحظة: الوزن مجبور لأعلى عدد صحيح (مثال: 1.1 كغ → 2 كغ).</p>
         <button class="btn-primary" style="width:100%;padding:14px;font-size:15px;margin-top:14px;background:#F59E0B;border-color:#F59E0B;color:#0F172A;font-weight:800" onclick="goToOrder(${price},${qty},${weight},${regionId},'${method}')">
           📦 متابعة الطلب بهذه التفاصيل
         </button>
@@ -442,18 +441,18 @@ async function renderNewOrder() {
             <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">المحافظة</label>
             <select id="o_region" onchange="recalcOrder()">
               <option value="">-- اختر --</option>
-              ${regions.map(r => `<option value="${r.id}" ${prefill && prefill.regionId == r.id ? 'selected' : ''}>${esc(r.name_ar)} (توصيل $${fmt(r.delivery_fee_usd)})</option>`).join('')}
+              ${regions.map(r => `<option value="${r.id}" ${prefill && prefill.regionId == r.id ? 'selected' : ''}>${esc(r.name_ar)}</option>`).join('')}
             </select>
           </div>
         </div>
         <div class="radio-group" style="margin-top:14px">
           <div class="radio-btn">
             <input type="radio" name="oship" id="oship_air" value="air" ${prefill && prefill.method === 'sea' ? '' : 'checked'} onchange="recalcOrder()">
-            <label for="oship_air">✈️ جوي<span class="sub">أسرع — 3 إلى 4 أسابيع</span></label>
+            <label for="oship_air">✈️ جوي<span class="sub">$5/كغ — 3 إلى 4 أسابيع</span></label>
           </div>
           <div class="radio-btn">
             <input type="radio" name="oship" id="oship_sea" value="sea" ${prefill && prefill.method === 'sea' ? 'checked' : ''} onchange="recalcOrder()">
-            <label for="oship_sea">🚢 بحري<span class="sub">أرخص — 5 إلى 6 أسابيع</span></label>
+            <label for="oship_sea">🚢 بحري<span class="sub">$2/كغ — 5 إلى 6 أسابيع</span></label>
           </div>
         </div>
       </div>
@@ -562,10 +561,9 @@ async function recalcOrder() {
       <div class="calc-result">
         <h3>💰 السعر النهائي التقديري</h3>
         <div class="calc-line"><span>سعر المنتج × ${qty}</span><span class="v">$${fmt(q.product_cost)}</span></div>
-        <div class="calc-line"><span>الشحن (${q.total_weight_kg} كغ)</span><span class="v">$${fmt(q.shipping_cost)}</span></div>
-        <div class="calc-line"><span>الجمارك والتشغيل</span><span class="v">$${fmt(q.customs)}</span></div>
-        <div class="calc-line"><span>عمولة المنصة</span><span class="v">$${fmt(q.commission)}</span></div>
-        <div class="calc-line"><span>التوصيل داخل سوريا</span><span class="v">$${fmt(q.delivery_fee)}</span></div>
+        <div class="calc-line"><span>الشحن (${q.rounded_weight_kg} كغ مجبور)</span><span class="v">$${fmt(q.shipping_cost)}</span></div>
+        <div class="calc-line"><span>الجمارك والخدمة (5%)</span><span class="v">$${fmt(q.customs)}</span></div>
+        <div class="calc-line"><span>التوصيل داخل سوريا</span><span class="v" style="color:#10B981">مجاني 🎉</span></div>
         <div class="calc-line total"><span>الإجمالي (USDT)</span><span>${fmt(q.total_usdt)}</span></div>
       </div>`;
   } catch (e) { box.innerHTML = `<div class="warn">${esc(e.message)}</div>`; }
@@ -667,12 +665,14 @@ async function renderOrderDetail(id) {
 
     <div class="summary" style="margin-top:16px">
       <h3>💰 تفاصيل التسعير</h3>
-      <div class="total-line"><span>سعر المنتج</span><span>$${fmt(o.product_price_usd * o.quantity)}</span></div>
+      <div class="total-line"><span>سعر المنتج (${o.quantity} قطعة)</span><span>$${fmt(o.product_price_usd * o.quantity)}</span></div>
       <div class="total-line"><span>الشحن الدولي</span><span>$${fmt(o.shipping_cost_usd)}</span></div>
-      <div class="total-line"><span>الجمارك والتشغيل</span><span>$${fmt(o.customs_usd)}</span></div>
-      <div class="total-line"><span>عمولة المنصة</span><span>$${fmt(o.commission_usd)}</span></div>
-      <div class="total-line"><span>التوصيل داخل سوريا</span><span>$${fmt(o.delivery_fee_usd)}</span></div>
-      ${o.admin_adjusted_usd ? `<div class="total-line" style="color:#F59E0B"><span>⚠️ تم تعديل السعر من الإدارة</span><span>$${fmt(o.admin_adjusted_usd)}</span></div>` : ''}
+      <div class="total-line">
+        <span>الجمارك والخدمة ${o.admin_customs_usd ? `<span style="color:#F59E0B;font-size:11px">(معدّلة من الإدارة)</span>` : '(5%)'}</span>
+        <span>$${fmt(o.admin_customs_usd || o.customs_usd)}</span>
+      </div>
+      <div class="total-line"><span>التوصيل داخل سوريا</span><span style="color:#10B981">مجاني 🎉</span></div>
+      ${o.admin_adjusted_usd ? `<div class="total-line" style="color:#F59E0B"><span>⚠️ السعر النهائي معدّل من الإدارة</span><span>$${fmt(o.admin_adjusted_usd)}</span></div>` : ''}
       <div class="total-line big"><span>الإجمالي</span><span>$${fmt(o.admin_adjusted_usd || o.total_usd)} USDT</span></div>
     </div>
 
@@ -992,6 +992,7 @@ function editOrder(o) {
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.onclick = e => { if (e.target === bg) bg.remove(); };
+  const currentCustoms = o.admin_customs_usd !== null && o.admin_customs_usd !== undefined ? o.admin_customs_usd : o.customs_usd;
   bg.innerHTML = `
     <div class="modal">
       <button class="modal-close" onclick="this.closest('.modal-bg').remove()">✕</button>
@@ -1001,8 +1002,10 @@ function editOrder(o) {
           ${Object.keys(labels).map(k => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${labels[k]}</option>`).join('')}
         </select>
       </div>
-      <div class="fg"><label>تعديل السعر النهائي (اتركه فارغاً للإبقاء على $${fmt(o.total_usd)}):</label>
-        <input type="number" step="0.01" id="mo_price" value="${o.admin_adjusted_usd || ''}" placeholder="${fmt(o.total_usd)}">
+      <div class="fg" style="background:#FEF3C7;padding:14px;border-radius:10px;border-right:3px solid #F59E0B">
+        <label style="color:#78350F">🏛️ تعديل قيمة الجمارك (للطلبات الخاصة):</label>
+        <input type="number" step="0.01" id="mo_customs" value="${fmt(currentCustoms)}" placeholder="${fmt(o.customs_usd)}">
+        <p class="mini" style="margin-top:6px;color:#78350F">القيمة الحالية: $${fmt(o.customs_usd)} — عند التعديل سيُعاد حساب الإجمالي تلقائياً.</p>
       </div>
       <div class="fg"><label>ملاحظة التتبع (اختياري):</label>
         <input id="mo_note" placeholder="مثال: تم استلام الشحنة في المستودع الخارجي">
@@ -1017,9 +1020,10 @@ function editOrder(o) {
 window.editOrder = editOrder;
 
 async function saveOrderEdit(id) {
+  const customsVal = document.getElementById('mo_customs').value;
   const body = {
     status: document.getElementById('mo_status').value,
-    admin_adjusted_usd: document.getElementById('mo_price').value ? parseFloat(document.getElementById('mo_price').value) : null,
+    admin_customs_usd: customsVal ? parseFloat(customsVal) : null,
     tracking_note: document.getElementById('mo_note').value.trim(),
     notes: document.getElementById('mo_notes').value.trim()
   };
@@ -1042,26 +1046,32 @@ window.delOrder = delOrder;
 async function adminPricing(c) {
   const p = await api('/api/admin/pricing');
   const fields = [
-    ['per_kg_air', 'سعر الكيلو الجوي ($)'],
-    ['per_kg_sea', 'سعر الكيلو البحري ($)'],
-    ['customs_percent', 'نسبة الجمارك والتشغيل (%)'],
-    ['commission_percent', 'عمولة المنصة (%)'],
-    ['min_weight_kg', 'الوزن الأدنى المحتسب (كغ)'],
-    ['usdt_rate', 'سعر صرف USDT مقابل الدولار']
+    ['per_kg_air', '✈️ سعر الكيلو الجوي ($)', '5'],
+    ['per_kg_sea', '🚢 سعر الكيلو البحري ($)', '2'],
+    ['customs_percent', '🏛️ نسبة الجمارك والخدمة (%)', '5'],
+    ['usdt_rate', '💱 سعر صرف USDT مقابل الدولار', '1']
   ];
   c.innerHTML = `
-    <h4 style="margin-bottom:16px;color:#0F172A">💰 إعدادات التسعير والعمولات</h4>
+    <h4 style="margin-bottom:16px;color:#0F172A">💰 إعدادات التسعير التلقائي</h4>
+    <div class="afm" style="background:#FEF3C7;border-color:#FCD34D">
+      <p style="color:#78350F;font-weight:700;margin-bottom:14px">📐 المعادلة المعتمدة:</p>
+      <p style="color:#78350F;line-height:1.9;font-size:14px">
+        <strong>الإجمالي</strong> = سعر المنتج + (الوزن المجبور لأعلى عدد صحيح × سعر الكيلو) + (5% جمارك)<br>
+        <strong>التوصيل داخل سوريا:</strong> مجاني دائماً<br>
+        <strong>الوزن:</strong> يُجبَر بـ Math.ceil (مثال: 1.1 كغ → 2 كغ)
+      </p>
+    </div>
     <div class="afm">
-      ${fields.map(([k, label]) => `
+      ${fields.map(([k, label, def]) => `
         <div class="fg"><label>${label}:</label>
-          <input type="number" step="0.01" id="pr_${k}" value="${p[k] || 0}">
+          <input type="number" step="0.01" id="pr_${k}" value="${p[k] !== undefined ? p[k] : def}">
         </div>`).join('')}
       <button class="btn-primary" onclick="savePricing()">💾 حفظ</button>
     </div>
-    <p class="mini">💡 التعديلات تنعكس فوراً على حاسبة السعر في الصفحة الرئيسية وصفحة الطلب.</p>`;
+    <p class="mini">💡 التعديلات تنعكس فوراً على حاسبة السعر في الصفحة الرئيسية وصفحة الطلب الجديدة.</p>`;
 }
 async function savePricing() {
-  const keys = ['per_kg_air','per_kg_sea','customs_percent','commission_percent','min_weight_kg','usdt_rate'];
+  const keys = ['per_kg_air','per_kg_sea','customs_percent','usdt_rate'];
   const body = {};
   keys.forEach(k => body[k] = parseFloat(document.getElementById('pr_' + k).value) || 0);
   try {
