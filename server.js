@@ -15,7 +15,6 @@ const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-// ==================== الجداول ====================
 db.exec(`
 CREATE TABLE IF NOT EXISTS accounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +50,7 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_cost_usd REAL NOT NULL, customs_usd REAL NOT NULL,
   commission_usd REAL NOT NULL, delivery_fee_usd REAL NOT NULL,
   total_usd REAL NOT NULL, admin_adjusted_usd REAL,
+  admin_customs_usd REAL,
   wallet_network TEXT, wallet_address TEXT, tx_ref TEXT, tx_proof_url TEXT,
   status TEXT DEFAULT 'awaiting_payment', notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -98,7 +98,8 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 `);
 
-// ==================== الثوابت ====================
+try { db.exec('ALTER TABLE orders ADD COLUMN admin_customs_usd REAL'); } catch (e) {}
+
 const STATUS_LABELS = {
   awaiting_payment: '⏳ بانتظار الدفع',
   payment_received: '💵 تم استلام الدفع',
@@ -113,15 +114,13 @@ const STATUS_LABELS = {
 };
 const STATUS_FLOW = ['awaiting_payment','payment_received','purchased','warehouse_foreign','international_shipping','arrived_syria','out_for_delivery','delivered'];
 
-// ==================== البذور ====================
 function seed() {
-  // الإعدادات
   const setP = db.prepare('INSERT OR IGNORE INTO pricing (key, value) VALUES (?, ?)');
-  setP.run('per_kg_air', '18');
-  setP.run('per_kg_sea', '6');
-  setP.run('customs_percent', '15');
-  setP.run('commission_percent', '10');
-  setP.run('min_weight_kg', '0.5');
+  setP.run('per_kg_air', '5');
+  setP.run('per_kg_sea', '2');
+  setP.run('customs_percent', '5');
+  setP.run('commission_percent', '0');
+  setP.run('min_weight_kg', '1');
   setP.run('usdt_rate', '1');
   setP.run('default_shipping_method', 'air');
 
@@ -137,7 +136,6 @@ function seed() {
   setC.run('telegram_channel', 'wasalni');
   setC.run('warranty_note', 'ضمان استرجاع كامل للـ USDT عند عدم وصول الشحنة.');
 
-  // الأدمن
   if (!db.prepare('SELECT id FROM accounts WHERE email = ?').get('admin@gmail.com')) {
     const hash = bcrypt.hashSync('Admin@123', 10);
     db.prepare('INSERT INTO accounts (email, phone, name, password_hash, is_admin) VALUES (?, ?, ?, ?, 1)')
@@ -145,7 +143,6 @@ function seed() {
     console.log('✅ الأدمن: admin@gmail.com / Admin@123');
   }
 
-  // الدول
   if (db.prepare('SELECT COUNT(*) c FROM countries').get().c === 0) {
     const ins = db.prepare('INSERT INTO countries (name_ar, name_en, flag, sort_order) VALUES (?, ?, ?, ?)');
     ins.run('سوريا', 'Syria', '🇸🇾', 1);
@@ -154,19 +151,17 @@ function seed() {
     ins.run('الأردن', 'Jordan', '🇯🇴', 4);
   }
 
-  // المحافظات السورية
   const syria = db.prepare("SELECT id FROM countries WHERE name_en='Syria'").get();
   if (syria && db.prepare('SELECT COUNT(*) c FROM regions WHERE country_id=?').get(syria.id).c === 0) {
     const ins = db.prepare('INSERT INTO regions (country_id, name_ar, delivery_fee_usd) VALUES (?, ?, ?)');
     const gov = [
-      ['دمشق', 5], ['ريف دمشق', 7], ['حلب', 8], ['حمص', 7],
-      ['حماة', 7], ['اللاذقية', 8], ['طرطوس', 8], ['إدلب', 9],
-      ['دير الزور', 10], ['الرقة', 10], ['الحسكة', 11], ['درعا', 8], ['السويداء', 8], ['القنيطرة', 8]
+      ['دمشق', 0], ['ريف دمشق', 0], ['حلب', 0], ['حمص', 0],
+      ['حماة', 0], ['اللاذقية', 0], ['طرطوس', 0], ['إدلب', 0],
+      ['دير الزور', 0], ['الرقة', 0], ['الحسكة', 0], ['درعا', 0], ['السويداء', 0], ['القنيطرة', 0]
     ];
     gov.forEach(([name, fee]) => ins.run(syria.id, name, fee));
   }
 
-  // المتاجر المدعومة
   if (db.prepare('SELECT COUNT(*) c FROM stores').get().c === 0) {
     const ins = db.prepare('INSERT INTO stores (name_ar, name_en, icon, url_hint, sort_order) VALUES (?, ?, ?, ?, ?)');
     ins.run('أمازون', 'Amazon', '🅰️', 'amazon.com', 1);
@@ -176,14 +171,12 @@ function seed() {
     ins.run('متجر مخصص', 'Custom', '🌐', '', 5);
   }
 
-  // المحافظ
   if (db.prepare('SELECT COUNT(*) c FROM wallets').get().c === 0) {
     const ins = db.prepare('INSERT INTO wallets (network, address, sort_order) VALUES (?, ?, ?)');
     ins.run('TRC20', 'TXYZabcdefghijklmnopqrstuvwxyz123456', 1);
     ins.run('BEP20', '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0', 2);
   }
 
-  // إثباتات التسليم
   if (db.prepare('SELECT COUNT(*) c FROM testimonials').get().c === 0) {
     const ins = db.prepare('INSERT INTO testimonials (customer_name, title, description, image_url) VALUES (?, ?, ?, ?)');
     ins.run('أحمد من دمشق', 'آيفون 15 برو', 'وصلني الجهاز بأسبوعين فقط، مغلق وبتغليف أصلي. تجربة ممتازة.', 'https://images.unsplash.com/photo-1592286927505-1def25115558?w=400');
@@ -194,7 +187,6 @@ function seed() {
 }
 seed();
 
-// ==================== Middleware ====================
 app.use(cors());
 app.use(express.json({ limit: '12mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -222,12 +214,10 @@ function maskName(name) {
   return f.charAt(0) + '***' + (l && l !== f ? l.charAt(0) : '');
 }
 
-// ==================== التحقق ====================
 const RE_EMAIL = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i;
 const RE_PHONE = /^09\d{8}$/;
 const RE_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_\-+=\[\]{};:'",.<>\/?\\|`~]).{8,}$/;
 
-// ==================== المصادقة ====================
 app.post('/api/auth/register', (req, res) => {
   const { name, email, phone, password } = req.body;
   if (!name || name.trim().length < 3) return res.status(400).json({ detail: 'الاسم مطلوب' });
@@ -264,7 +254,6 @@ app.post('/api/auth/login', (req, res) => {
 
 app.get('/api/auth/me', auth, (req, res) => res.json({ user: req.user }));
 
-// ==================== البيانات العامة ====================
 app.get('/api/public/data', (req, res) => {
   const content = {}; db.prepare('SELECT * FROM content').all().forEach(r => content[r.key] = r.value);
   const pricing = {}; db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
@@ -276,7 +265,6 @@ app.get('/api/public/data', (req, res) => {
   res.json({ content, pricing, countries, regions, stores, wallets, testimonials, status_labels: STATUS_LABELS });
 });
 
-// ==================== حساب السعر ====================
 app.post('/api/quote', (req, res) => {
   const { product_price_usd, quantity = 1, weight_kg, shipping_method = 'air', region_id } = req.body;
 
@@ -284,38 +272,43 @@ app.post('/api/quote', (req, res) => {
   if (!weight_kg || weight_kg <= 0) return res.status(400).json({ detail: 'الوزن مطلوب' });
   if (!region_id) return res.status(400).json({ detail: 'المحافظة مطلوبة' });
 
-  const pricing = {}; db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
+  const pricing = {};
+  db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
   const region = db.prepare('SELECT * FROM regions WHERE id = ?').get(region_id);
   if (!region) return res.status(400).json({ detail: 'المحافظة غير موجودة' });
 
   const qty = Math.max(1, parseInt(quantity));
-  const weight = Math.max(weight_kg, pricing.min_weight_kg || 0.5);
-  const totalWeight = weight * qty;
+
+  const rawWeight = parseFloat(weight_kg) * qty;
+  const roundedWeight = Math.ceil(rawWeight);
+
+  const perKg = shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
+  const shippingCost = roundedWeight * perKg;
 
   const productCost = product_price_usd * qty;
-  const perKg = shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
-  const shippingCost = totalWeight * perKg;
-  const customs = productCost * (pricing.customs_percent / 100);
-  const commission = productCost * (pricing.commission_percent / 100);
-  const deliveryFee = region.delivery_fee_usd || 0;
 
-  const total = productCost + shippingCost + customs + commission + deliveryFee;
+  const customs = productCost * (pricing.customs_percent / 100);
+
+  const deliveryFee = 0;
+
+  const total = productCost + shippingCost + customs;
 
   res.json({
     product_cost: +productCost.toFixed(2),
     shipping_cost: +shippingCost.toFixed(2),
     customs: +customs.toFixed(2),
-    commission: +commission.toFixed(2),
-    delivery_fee: +deliveryFee.toFixed(2),
+    commission: 0,
+    delivery_fee: 0,
     total_usd: +total.toFixed(2),
-    total_usdt: +(total * (pricing.usdt_rate || 1)).toFixed(2),
-    usdt_rate: pricing.usdt_rate || 1,
-    total_weight_kg: +totalWeight.toFixed(2),
+    total_usdt: +total.toFixed(2),
+    usdt_rate: 1,
+    raw_weight_kg: +rawWeight.toFixed(2),
+    rounded_weight_kg: roundedWeight,
+    total_weight_kg: roundedWeight,
     per_kg_used: perKg
   });
 });
 
-// ==================== إنشاء طلب ====================
 function genOrderNumber() {
   const d = new Date();
   const ymd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
@@ -331,7 +324,6 @@ app.post('/api/orders', auth, (req, res) => {
     shipping_method = 'air', wallet_network, tx_ref, tx_proof_url
   } = req.body;
 
-  // التحقق
   if (!receiver_name || receiver_name.trim().split(/\s+/).length < 3)
     return res.status(400).json({ detail: 'الاسم الثلاثي للمستلم مطلوب' });
   if (!receiver_phone || !RE_PHONE.test(receiver_phone))
@@ -350,15 +342,17 @@ app.post('/api/orders', auth, (req, res) => {
   const country = db.prepare('SELECT * FROM countries WHERE id = ?').get(country_id || region.country_id);
 
   const qty = Math.max(1, parseInt(quantity));
-  const weight = Math.max(weight_kg, pricing.min_weight_kg || 0.5);
-  const totalWeight = weight * qty;
+
+  const rawWeight = parseFloat(weight_kg) * qty;
+  const roundedWeight = Math.ceil(rawWeight);
+
   const productCost = product_price_usd * qty;
   const perKg = shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
-  const shippingCost = totalWeight * perKg;
+  const shippingCost = roundedWeight * perKg;
   const customs = productCost * (pricing.customs_percent / 100);
-  const commission = productCost * (pricing.commission_percent / 100);
-  const deliveryFee = region.delivery_fee_usd || 0;
-  const total = productCost + shippingCost + customs + commission + deliveryFee;
+  const commission = 0;
+  const deliveryFee = 0;
+  const total = productCost + shippingCost + customs;
 
   const orderNumber = genOrderNumber();
   const userName = req.user.name || 'عميل';
@@ -375,8 +369,8 @@ app.post('/api/orders', auth, (req, res) => {
       orderNumber, req.user.id, userName, country ? country.id : null, region.id,
       receiver_name.trim(), receiver_phone, full_address.trim(),
       store_name || '', product_title.trim(), product_url.trim(),
-      product_price_usd, qty, weight, shipping_method,
-      +shippingCost.toFixed(2), +customs.toFixed(2), +commission.toFixed(2), +deliveryFee.toFixed(2), +total.toFixed(2),
+      product_price_usd, qty, rawWeight, shipping_method,
+      +shippingCost.toFixed(2), +customs.toFixed(2), 0, 0, +total.toFixed(2),
       wallet_network || '', tx_ref || '', tx_proof_url || '', 'awaiting_payment'
     );
 
@@ -389,7 +383,6 @@ app.post('/api/orders', auth, (req, res) => {
   res.json({ success: true, order_id: orderId, order_number: orderNumber, total_usd: +total.toFixed(2) });
 });
 
-// ==================== طلباتي ====================
 app.get('/api/orders/mine', auth, (req, res) => {
   const orders = db.prepare(`SELECT o.*, r.name_ar as region_name, c.name_ar as country_name
     FROM orders o
@@ -412,7 +405,6 @@ app.get('/api/orders/:id', auth, (req, res) => {
   res.json(o);
 });
 
-// تقديم إثبات الدفع
 app.post('/api/orders/:id/submit-payment', auth, (req, res) => {
   const { wallet_network, tx_ref, tx_proof_url } = req.body;
   const o = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
@@ -427,7 +419,6 @@ app.post('/api/orders/:id/submit-payment', auth, (req, res) => {
   res.json({ success: true });
 });
 
-// ==================== الإشعارات ====================
 app.get('/api/notifications', auth, (req, res) => {
   res.json(db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30').all(req.user.id));
 });
@@ -436,7 +427,6 @@ app.post('/api/notifications/read-all', auth, (req, res) => {
   res.json({ success: true });
 });
 
-// ==================== الدعم ====================
 app.post('/api/support', auth, (req, res) => {
   const { message } = req.body;
   if (!message || !message.trim()) return res.status(400).json({ detail: 'الرسالة مطلوبة' });
@@ -449,7 +439,6 @@ app.get('/api/support/mine', auth, (req, res) => {
   res.json(db.prepare('SELECT * FROM support_messages WHERE user_id = ? ORDER BY created_at ASC').all(req.user.id));
 });
 
-// ==================== لوحة الأدمن ====================
 app.get('/api/admin/stats', auth, adminOnly, (req, res) => {
   res.json({
     total_orders: db.prepare('SELECT COUNT(*) c FROM orders').get().c,
@@ -462,7 +451,6 @@ app.get('/api/admin/stats', auth, adminOnly, (req, res) => {
   });
 });
 
-// الطلبات
 app.get('/api/admin/orders', auth, adminOnly, (req, res) => {
   const orders = db.prepare(`SELECT o.*, r.name_ar as region_name FROM orders o
     LEFT JOIN regions r ON o.region_id = r.id ORDER BY o.created_at DESC`).all();
@@ -471,17 +459,29 @@ app.get('/api/admin/orders', auth, adminOnly, (req, res) => {
 });
 
 app.put('/api/admin/orders/:id', auth, adminOnly, (req, res) => {
-  const { status, admin_adjusted_usd, notes, tracking_note } = req.body;
+  const { status, admin_adjusted_usd, admin_customs_usd, notes, tracking_note } = req.body;
   const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
 
   if (status && !STATUS_LABELS[status]) return res.status(400).json({ detail: 'حالة غير صحيحة' });
 
   const newAdjusted = admin_adjusted_usd !== undefined ? admin_adjusted_usd : o.admin_adjusted_usd;
+  const newCustoms = admin_customs_usd !== undefined ? admin_customs_usd : o.admin_customs_usd;
   const newNotes = notes !== undefined ? notes : o.notes;
 
-  db.prepare(`UPDATE orders SET status = COALESCE(?, status), admin_adjusted_usd = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-    .run(status || null, newAdjusted, newNotes, req.params.id);
+  let newTotal = o.total_usd;
+  if (admin_customs_usd !== undefined && admin_customs_usd !== null) {
+    const productCost = o.product_price_usd * o.quantity;
+    const roundedWeight = Math.ceil(o.weight_kg);
+    const pricing = {};
+    db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
+    const perKg = o.shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
+    const shippingCost = roundedWeight * perKg;
+    newTotal = productCost + shippingCost + parseFloat(admin_customs_usd);
+  }
+
+  db.prepare(`UPDATE orders SET status = COALESCE(?, status), admin_adjusted_usd = ?, admin_customs_usd = ?, total_usd = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+    .run(status || null, newAdjusted, newCustoms, +newTotal.toFixed(2), newNotes, req.params.id);
 
   if (status && status !== o.status) {
     db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
@@ -498,7 +498,6 @@ app.delete('/api/admin/orders/:id', auth, adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
-// التسعير
 app.get('/api/admin/pricing', auth, adminOnly, (req, res) => {
   const rows = db.prepare('SELECT * FROM pricing').all();
   const obj = {}; rows.forEach(r => obj[r.key] = r.value);
@@ -510,7 +509,6 @@ app.put('/api/admin/pricing', auth, adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
-// المحافظ
 app.get('/api/admin/wallets', auth, adminOnly, (req, res) => {
   res.json(db.prepare('SELECT * FROM wallets ORDER BY sort_order').all());
 });
@@ -532,7 +530,6 @@ app.delete('/api/admin/wallets/:id', auth, adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
-// المتاجر
 app.get('/api/admin/stores', auth, adminOnly, (req, res) => {
   res.json(db.prepare('SELECT * FROM stores ORDER BY sort_order').all());
 });
@@ -554,7 +551,6 @@ app.delete('/api/admin/stores/:id', auth, adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
-// إثباتات التسليم
 app.get('/api/admin/testimonials', auth, adminOnly, (req, res) => {
   res.json(db.prepare('SELECT * FROM testimonials ORDER BY sort_order, id DESC').all());
 });
@@ -575,7 +571,6 @@ app.delete('/api/admin/testimonials/:id', auth, adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
-// المحتوى
 app.get('/api/admin/content', auth, adminOnly, (req, res) => {
   const rows = db.prepare('SELECT * FROM content').all();
   const obj = {}; rows.forEach(r => obj[r.key] = r.value);
@@ -587,7 +582,6 @@ app.put('/api/admin/content', auth, adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
-// الدول والمحافظ
 app.get('/api/admin/countries', auth, adminOnly, (req, res) => {
   const countries = db.prepare('SELECT * FROM countries ORDER BY sort_order').all();
   countries.forEach(c => { c.regions = db.prepare('SELECT * FROM regions WHERE country_id = ? ORDER BY name_ar').all(c.id); });
@@ -629,7 +623,6 @@ app.delete('/api/admin/regions/:id', auth, adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
-// الحسابات
 app.get('/api/admin/accounts', auth, adminOnly, (req, res) => {
   res.json(db.prepare('SELECT id, email, phone, name, banned, is_admin, created_at FROM accounts ORDER BY id DESC').all());
 });
@@ -643,7 +636,6 @@ app.delete('/api/admin/accounts/:id', auth, adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
-// الدعم
 app.get('/api/admin/support', auth, adminOnly, (req, res) => {
   res.json(db.prepare(`SELECT s.*, a.email as user_email, a.phone as user_phone
     FROM support_messages s JOIN accounts a ON s.user_id = a.id
@@ -657,7 +649,6 @@ app.post('/api/admin/support/:id/reply', auth, adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
-// إشعار جماعي
 app.post('/api/admin/broadcast', auth, adminOnly, (req, res) => {
   const { title, body } = req.body;
   if (!title) return res.status(400).json({ detail: 'العنوان مطلوب' });
@@ -667,7 +658,6 @@ app.post('/api/admin/broadcast', auth, adminOnly, (req, res) => {
   res.json({ success: true, count: users.length });
 });
 
-// SPA fallback
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.listen(PORT, '0.0.0.0', () => {
