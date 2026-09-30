@@ -127,7 +127,6 @@ const STATUS_LABELS = {
   cancelled: '❌ ملغي',
   refunded: '💸 مسترجع'
 };
-const STATUS_FLOW = ['awaiting_payment','payment_received','purchased','warehouse_foreign','international_shipping','arrived_syria','out_for_delivery','delivered'];
 
 function seed() {
   const setP = db.prepare('INSERT OR IGNORE INTO pricing (key, value) VALUES (?, ?)');
@@ -247,6 +246,19 @@ async function fetchProductPage(url) {
 function extractPageContent(html) {
   if (!html) return null;
 
+  const lowerHtml = html.toLowerCase();
+  const blockSignals = ['captcha','robot check','are you a human','access denied',
+    'automated queries','unusual traffic','verify you are human',
+    'please enable javascript','cf-browser-verification','just a moment','attention required'];
+  if (blockSignals.some(s => lowerHtml.includes(s))) {
+    console.log('🚫 الصفحة محجوبة (captcha/block)');
+    return null;
+  }
+  if (html.length < 8000) {
+    console.log('⚠️ الصفحة قصيرة جداً:', html.length);
+    return null;
+  }
+
   const getMeta = (patterns) => {
     for (const p of patterns) {
       const m = html.match(p);
@@ -254,11 +266,10 @@ function extractPageContent(html) {
     }
     return '';
   };
-
   const decodeEntities = (s) => s
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
-    .replace(/&#x27;/g, "'").replace(/&hellip;/g, '…').replace(/&#x2F;/g, '/');
+    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    .replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ')
+    .replace(/&#x27;/g,"'").replace(/&hellip;/g,'…').replace(/&#x2F;/g,'/');
 
   const ogTitle = getMeta([
     /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
@@ -266,46 +277,45 @@ function extractPageContent(html) {
     /<title[^>]*>([^<]+)<\/title>/i
   ]);
 
+  const lowTitle = ogTitle.toLowerCase().trim();
+  if (!ogTitle || lowTitle === 'amazon' || lowTitle === 'amazon.com' ||
+      lowTitle === 'amazon.ae' || lowTitle === 'ebay' || lowTitle === 'aliexpress') {
+    console.log('🚫 الصفحة ما فيها منتج حقيقي (العنوان عام):', ogTitle);
+    return null;
+  }
+
   const ogDesc = getMeta([
     /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+name=["']twitter:description["'][^>]+content=["']([^"']+)["']/i
   ]);
-
   const ogImage = getMeta([
     /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i
   ]);
-
   const ogPrice = getMeta([
     /<meta[^>]+property=["']product:price:amount["'][^>]+content=["']([^"']+)["']/i,
     /<meta[^>]+property=["']og:price:amount["'][^>]+content=["']([^"']+)["']/i,
     /"price"\s*:\s*"?([\d.]+)"?/i,
-    /"priceAmount"\s*:\s*"?([\d.]+)"?/i,
-    /<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([\d,]+)/i,
-    /\$\s*([\d,]+\.?\d*)/i
+    /"priceAmount"\s*:\s*"?([\d.]+)"?/i
   ]);
-
   const ogBrand = getMeta([
     /<meta[^>]+property=["']product:brand["'][^>]+content=["']([^"']+)["']/i,
     /"brand"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/i
   ]);
 
   let textContent = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&[a-z#0-9]+;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 4000);
+    .replace(/<script[\s\S]*?<\/script>/gi,' ')
+    .replace(/<style[\s\S]*?<\/style>/gi,' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi,' ')
+    .replace(/<[^>]+>/g,' ').replace(/&[a-z#0-9]+;/gi,' ')
+    .replace(/\s+/g,' ').trim().slice(0, 4000);
 
   return {
     title: decodeEntities(ogTitle),
     description: decodeEntities(ogDesc).slice(0, 800),
     image: ogImage,
-    price: ogPrice.replace(/,/g, ''),
+    price: ogPrice.replace(/,/g,''),
     brand: decodeEntities(ogBrand),
     text_sample: textContent
   };
@@ -314,159 +324,144 @@ function extractPageContent(html) {
 // ==================== تحليل الرابط عبر Groq ====================
 async function analyzeProductUrl(url) {
   if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY غير مضبوط');
-
   const endpoint = 'https://api.groq.com/openai/v1/chat/completions';
 
   const html = await fetchProductPage(url);
   const pageData = extractPageContent(html);
 
-  if (!pageData || (!pageData.title && !pageData.description)) {
-    console.log('⚠️ فشل استخراج صفحة المنتج من الرابط');
+  console.log('📄 حالة الجلب:', pageData ? '✅ نجح' : '❌ فشل/محجوب');
+  if (pageData) {
+    console.log('   عنوان:', (pageData.title || '').slice(0, 80));
+    console.log('   سعر:', pageData.price || '(none)');
+    console.log('   صورة:', (pageData.image || '').slice(0, 60));
   }
 
-  const pageContext = pageData ? `
-The following data was extracted from the product page:
+  if (!pageData) {
+    return {
+      found: false,
+      product_title: '',
+      price_usd: 0,
+      image_url: '',
+      sizes: [],
+      colors: [],
+      weight_kg: 1,
+      store_name: '',
+      description: '',
+      confidence: 'low'
+    };
+  }
 
-Title: ${pageData.title || '(not found)'}
-Description: ${pageData.description || '(not found)'}
-Image URL: ${pageData.image || '(not found)'}
-Price (raw): ${pageData.price || '(not found)'}
-Brand: ${pageData.brand || '(not found)'}
-Page text sample: ${pageData.text_sample || '(not found)'}
-` : 'Could not fetch the page — use the URL itself to infer what you can.';
+  const pageContext = `
+Title: ${pageData.title || '(none)'}
+Description: ${pageData.description || '(none)'}
+Image URL: ${pageData.image || '(none)'}
+Price (raw): ${pageData.price || '(none)'}
+Brand: ${pageData.brand || '(none)'}
+Page text sample: ${pageData.text_sample || '(none)'}
+`;
 
-  const systemPrompt = `You are a product URL analyzer. You receive data extracted from a product page, and you must return ONLY a valid JSON object. No markdown, no code blocks, no explanation, no extra text.
+  const systemPrompt = `You are a product URL analyzer. Return ONLY valid JSON. No markdown, no explanation.
 
-Return this EXACT JSON structure:
+Return this EXACT structure:
 {
   "found": true or false,
-  "product_title": "clean product name",
+  "product_title": "clean product name (remove store name from title)",
   "price_usd": number (0 if unknown),
-  "image_url": "direct image URL or empty string",
-  "sizes": ["available sizes if any, else empty array"],
-  "colors": ["available colors if any, else empty array"],
-  "weight_kg": number (estimate based on category),
+  "image_url": "direct image URL or empty",
+  "sizes": ["sizes if any, else empty"],
+  "colors": ["colors if any, else empty"],
+  "weight_kg": number (estimate by category),
   "store_name": "store name",
-  "description": "short clean description",
-  "confidence": "high" or "medium" or "low"
+  "description": "short description",
+  "confidence": "high" | "medium" | "low"
 }
 
-Weight estimation guidelines:
-- Phone/tablet: 0.5 kg
-- Laptop: 2.5 kg
-- Watch/headphones: 0.4 kg
-- Book: 0.6 kg
-- Shoes: 1.2 kg
-- T-shirt/clothing: 0.3 kg
-- Camera: 1.5 kg
-- Kitchen appliance: 3 kg
-- Toy: 0.8 kg
+Weight guidelines: Phone 0.5, Laptop 2.5, Watch 0.4, Book 0.6, Shoes 1.2,
+T-shirt 0.3, Camera 1.5, Kitchen 3, Toy 0.8 kg.
 
-Rules:
-- Extract product_title from the page title (remove store name, "Buy", "Amazon.com" etc).
-- Extract price_usd as a number. If the price is in another currency, convert approximately to USD.
-- image_url MUST be the direct image URL from "Image URL" above if present.
-- sizes: only if the product has sizes (shoes, clothing). Otherwise empty array.
-- colors: only if the product has colors. Otherwise empty array.
-- If nothing useful was found, set "found": false.
-- Set confidence to "high" if title AND price were found, "medium" if only title, "low" otherwise.`;
+CRITICAL RULES:
+- If the page content has NO real product info (just store name, no clear title/price), set "found": false.
+- product_title MUST be the actual product name — NOT the store name.
+- price_usd must be a number, not a string. Convert other currencies to USD.`;
 
-  const userPrompt = `URL: ${url}
-
-${pageContext}
-
-Return the JSON now.`;
+  const userPrompt = `URL: ${url}\n\n${pageContext}\n\nReturn JSON now.`;
 
   const body = {
     model: GROQ_MODEL,
     messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
+      { role:'system', content: systemPrompt },
+      { role:'user', content: userPrompt }
     ],
     temperature: 0.1,
-    response_format: { type: 'json_object' },
+    response_format: { type:'json_object' },
     stream: false
   };
 
   let lastError = null;
-
   for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt++) {
     try {
       const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + GROQ_API_KEY
-        },
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + GROQ_API_KEY },
         body: JSON.stringify(body)
       });
-
       if (resp.ok) {
         const data = await resp.json();
         const text = data.choices?.[0]?.message?.content || '{"found":false}';
-
         let parsed;
         try { parsed = JSON.parse(text); }
-        catch (e) {
+        catch(e) {
           const m = text.match(/\{[\s\S]*\}/);
-          parsed = m ? JSON.parse(m[0]) : { found: false };
+          parsed = m ? JSON.parse(m[0]) : { found:false };
         }
 
-        if (!parsed.found && pageData && pageData.title) {
-          parsed.found = true;
-          parsed.product_title = parsed.product_title || pageData.title;
-          parsed.price_usd = parsed.price_usd || parseFloat(pageData.price) || 0;
-          parsed.image_url = parsed.image_url || pageData.image || '';
-          parsed.description = parsed.description || pageData.description || '';
-          parsed.confidence = parsed.confidence || 'medium';
+        console.log('🤖 رد Groq:', JSON.stringify(parsed).slice(0, 400));
+
+        let finalTitle = (parsed.product_title || '').trim();
+        const badTitles = ['amazon','amazon.com','amazon.ae','ebay','aliexpress','robot','captcha'];
+        if (finalTitle.length < 5 || badTitles.includes(finalTitle.toLowerCase())) {
+          finalTitle = pageData.title || '';
         }
+
+        const found = !!parsed.found && finalTitle.length >= 5;
 
         return {
-          found: !!parsed.found,
-          product_title: parsed.product_title || '',
-          price_usd: parseFloat(parsed.price_usd) || 0,
-          image_url: parsed.image_url || '',
+          found,
+          product_title: finalTitle,
+          price_usd: parseFloat(parsed.price_usd) || parseFloat(pageData.price) || 0,
+          image_url: parsed.image_url || pageData.image || '',
           sizes: Array.isArray(parsed.sizes) ? parsed.sizes : [],
           colors: Array.isArray(parsed.colors) ? parsed.colors : [],
           weight_kg: parseFloat(parsed.weight_kg) || 1,
           store_name: parsed.store_name || '',
-          description: parsed.description || '',
+          description: parsed.description || pageData.description || '',
           confidence: parsed.confidence || 'medium'
         };
       }
-
-      if ([429, 500, 502, 503, 504].includes(resp.status)) {
+      if ([429,500,502,503,504].includes(resp.status)) {
         const txt = await resp.text();
-        lastError = new Error(`Groq API ${resp.status}: ${txt.slice(0, 200)}`);
-
+        lastError = new Error(`Groq API ${resp.status}: ${txt.slice(0,200)}`);
         if (attempt < GROQ_MAX_RETRIES) {
           const delay = GROQ_INITIAL_DELAY_MS * Math.pow(2, attempt);
-          const jitter = Math.floor(Math.random() * 500);
-          console.log(`⏳ محاولة ${attempt + 1} فشلت (${resp.status}) — انتظار ${delay + jitter}ms...`);
-          await new Promise(r => setTimeout(r, delay + jitter));
+          await new Promise(r => setTimeout(r, delay + Math.floor(Math.random()*500)));
           continue;
         }
         throw lastError;
       }
-
       const txt = await resp.text();
-      throw new Error(`Groq API error: ${txt.slice(0, 300)}`);
-
+      throw new Error(`Groq API error: ${txt.slice(0,300)}`);
     } catch (e) {
       if (e.message && e.message.includes('Groq API')) throw e;
       lastError = e;
       if (attempt < GROQ_MAX_RETRIES) {
         const delay = GROQ_INITIAL_DELAY_MS * Math.pow(2, attempt);
-        const jitter = Math.floor(Math.random() * 500);
-        console.log(`⏳ خطأ شبكة — انتظار ${delay + jitter}ms...`);
-        await new Promise(r => setTimeout(r, delay + jitter));
+        await new Promise(r => setTimeout(r, delay + Math.floor(Math.random()*500)));
         continue;
       }
       throw lastError;
     }
   }
-
-  throw lastError || new Error('فشل تحليل الرابط بعد عدة محاولات');
+  throw lastError || new Error('فشل التحليل');
 }
 
 app.post('/api/analyze-url', auth, async (req, res) => {
