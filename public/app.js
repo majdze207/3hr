@@ -146,7 +146,7 @@ async function renderHome() {
     <div class="hero">
       <div class="hero-inner">
         <h1>${esc(c.hero_title || '🛒 تسوّق من أي متجر عالمي... ونوصلك إلى سوريا')}</h1>
-        <p>${esc(c.hero_subtitle || 'الصق رابط المنتج من أمازون أو علي إكسبريس أو إي باي — احسب السعر النهائي وادفع بالكريبتو، ونحن نتكفل بالباقي.')}</p>
+        <p>${esc(c.hero_subtitle || 'الصق رابط المنتج من أمازون أو علي إكسبريس أو إي باي — استخرج التفاصيل تلقائياً وادفع بالكريبتو.')}</p>
         <div class="hero-btns">
           <button class="cta" onclick="navigate('/new-order')">📦 اطلب الآن</button>
           <button class="cta-sec" onclick="document.getElementById('calculator').scrollIntoView({behavior:'smooth'})">🧮 احسب السعر</button>
@@ -155,7 +155,7 @@ async function renderHome() {
     </div>
 
     <div class="features">
-      <div class="feat"><div class="ic">🌐</div><h4>تسوق من أي متجر</h4><p>أمازون، علي إكسبريس، إي باي، وغيرها</p></div>
+      <div class="feat"><div class="ic">🤖</div><h4>تحليل ذكي بالذكاء الاصطناعي</h4><p>الصق الرابط واستخرج التفاصيل تلقائياً</p></div>
       <div class="feat"><div class="ic">🧮</div><h4>حاسبة شفافة</h4><p>سعر نهائي واضح بدون مفاجآت</p></div>
       <div class="feat"><div class="ic">💳</div><h4>دفع USDT</h4><p>سريع وآمن — TRC20 / BEP20</p></div>
       <div class="feat"><div class="ic">🚚</div><h4>تتبع مباشر</h4><p>8 مراحل من الشراء حتى التسليم</p></div>
@@ -388,6 +388,148 @@ async function renderHelp() {
     </div>`;
 }
 
+// ==================== Gemini URL Analysis ====================
+async function analyzeUrl() {
+  const url = document.getElementById('o_url')?.value.trim();
+  const statusBox = document.getElementById('aiStatus');
+  const resultBox = document.getElementById('aiResult');
+  if (!url) { toast('الصق رابط المنتج أولاً', 'error'); return; }
+  if (!/^https?:\/\/.+/i.test(url)) { toast('الرابط غير صالح', 'error'); return; }
+
+  if (statusBox) {
+    statusBox.style.display = 'block';
+    statusBox.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;padding:14px;background:#EEF2FF;border-radius:12px;border-right:4px solid #6366F1">
+        <div class="spinner"></div>
+        <div>
+          <strong style="color:#4338CA">🤖 جاري تحليل الرابط بالذكاء الاصطناعي…</strong>
+          <p style="font-size:12px;color:#6366F1;margin-top:4px">يتم استخراج الاسم والسعر والصورة والمقاسات والألوان والوزن</p>
+        </div>
+      </div>`;
+  }
+  if (resultBox) resultBox.innerHTML = '';
+
+  try {
+    const r = await api('/api/analyze-url', 'POST', { url });
+    if (statusBox) statusBox.style.display = 'none';
+
+    if (!r.found) {
+      if (resultBox) resultBox.innerHTML = `
+        <div class="warn" style="background:#FEF3C7;border-color:#FCD34D;border-right-color:#F59E0B;color:#78350F">
+          ⚠️ لم نستطع استخراج تفاصيل كاملة من هذا الرابط. يرجى إدخال التفاصيل يدوياً أدناه.
+        </div>`;
+      return;
+    }
+
+    window._productAnalysis = r;
+
+    if (r.product_title) {
+      const el = document.getElementById('o_title');
+      if (el && !el.value) el.value = r.product_title;
+    }
+    if (r.price_usd) {
+      const el = document.getElementById('o_price');
+      if (el) el.value = r.price_usd;
+    }
+    if (r.weight_kg) {
+      const el = document.getElementById('o_weight');
+      if (el && !el.value) el.value = r.weight_kg;
+    }
+    if (r.store_name) {
+      const sel = document.getElementById('o_store');
+      if (sel) {
+        for (const opt of sel.options) {
+          if (opt.value.includes(r.store_name) || r.store_name.includes(opt.value)) {
+            sel.value = opt.value; break;
+          }
+        }
+      }
+    }
+
+    const imgBox = document.getElementById('o_imagePreview');
+    if (imgBox) {
+      if (r.image_url) {
+        imgBox.innerHTML = `
+          <div style="display:flex;gap:14px;align-items:start;padding:14px;background:#F0FDF4;border-radius:12px;border-right:4px solid #10B981">
+            <img src="${esc(r.image_url)}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;background:#fff" onerror="this.style.display='none'">
+            <div style="flex:1">
+              <p style="font-weight:700;color:#065F46;margin-bottom:4px">✅ تم استخراج صورة المنتج</p>
+              <p style="font-size:12px;color:#10B981">الثقة: ${r.confidence === 'high' ? 'عالية' : r.confidence === 'low' ? 'منخفضة' : 'متوسطة'}</p>
+            </div>
+          </div>`;
+      } else {
+        imgBox.innerHTML = '';
+      }
+    }
+
+    const sizesBox = document.getElementById('sizesBox');
+    if (sizesBox) {
+      if (r.sizes && r.sizes.length) {
+        sizesBox.style.display = 'block';
+        sizesBox.innerHTML = `
+          <label style="font-size:14px;font-weight:700;display:block;margin-bottom:8px;color:#0F172A">📏 اختر المقاس:</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${r.sizes.map(s => `<button type="button" class="option-btn" data-size="${esc(s)}" onclick="selectSize(this)">${esc(s)}</button>`).join('')}
+          </div>`;
+      } else {
+        sizesBox.style.display = 'none';
+        sizesBox.innerHTML = '';
+      }
+    }
+
+    const colorsBox = document.getElementById('colorsBox');
+    if (colorsBox) {
+      if (r.colors && r.colors.length) {
+        colorsBox.style.display = 'block';
+        colorsBox.innerHTML = `
+          <label style="font-size:14px;font-weight:700;display:block;margin-bottom:8px;color:#0F172A">🎨 اختر اللون:</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            ${r.colors.map(c => `<button type="button" class="option-btn" data-color="${esc(c)}" onclick="selectColor(this)">${esc(c)}</button>`).join('')}
+          </div>`;
+      } else {
+        colorsBox.style.display = 'none';
+        colorsBox.innerHTML = '';
+      }
+    }
+
+    if (r.description) {
+      const notesEl = document.getElementById('o_notes');
+      if (notesEl && !notesEl.value) notesEl.value = r.description;
+    }
+
+    if (resultBox) {
+      resultBox.innerHTML = `
+        <div style="background:#EEF2FF;padding:14px;border-radius:12px;border-right:4px solid #6366F1;margin-top:12px">
+          <p style="font-weight:700;color:#4338CA;margin-bottom:8px">🤖 ملخص تحليل الذكاء الاصطناعي</p>
+          ${r.description ? `<p style="font-size:13px;color:#4F46E5;line-height:1.6;margin-bottom:6px">${esc(r.description)}</p>` : ''}
+          <p style="font-size:12px;color:#6366F1">تم ملء الحقول تلقائياً — يمكنك تعديلها قبل التأكيد.</p>
+        </div>`;
+    }
+
+    recalcOrder();
+    toast('✅ تم تحليل الرابط بنجاح');
+  } catch (e) {
+    if (statusBox) statusBox.style.display = 'none';
+    if (resultBox) resultBox.innerHTML = `<div class="warn">⚠️ ${esc(e.message)}</div>`;
+    toast(e.message, 'error');
+  }
+}
+window.analyzeUrl = analyzeUrl;
+
+function selectSize(btn) {
+  document.querySelectorAll('.option-btn[data-size]').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  window._selectedSize = btn.dataset.size;
+}
+window.selectSize = selectSize;
+
+function selectColor(btn) {
+  document.querySelectorAll('.option-btn[data-color]').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  window._selectedColor = btn.dataset.color;
+}
+window.selectColor = selectColor;
+
 // ==================== صفحة الطلب الجديدة ====================
 async function renderNewOrder() {
   if (!state.user) { toast('سجّل الدخول أولاً', 'error'); navigate('/login'); return; }
@@ -396,14 +538,33 @@ async function renderNewOrder() {
   const stores = state.settings.stores || [];
   const wallets = state.settings.wallets || [];
   const regions = state.settings.regions || [];
+  const geminiEnabled = state.settings.gemini_enabled;
+
+  window._selectedNet = wallets[0]?.network || '';
+  window._selectedSize = '';
+  window._selectedColor = '';
+  window._productAnalysis = null;
 
   document.getElementById('app').innerHTML = `
     <div class="sec-title"><h2>📦 إنشاء طلب جديد</h2></div>
-    <p style="color:#64748B;margin-bottom:20px">الصق رابط المنتج من أي متجر عالمي، أكمل التفاصيل، وسنحسب لك السعر النهائي تلقائياً.</p>
+    <p style="color:#64748B;margin-bottom:20px">الصق رابط المنتج وسيقوم الذكاء الاصطناعي باستخراج التفاصيل تلقائياً — أو أدخلها يدوياً.</p>
 
     <div class="calc-card">
       <div class="calc-section">
-        <h3><span class="num">1</span> المنتج المطلوب</h3>
+        <h3><span class="num">1</span> المنتج المطلوب ${geminiEnabled ? '<span style="font-size:11px;background:#6366F1;color:#fff;padding:3px 10px;border-radius:10px;margin-right:8px">🤖 تحليل ذكي</span>' : ''}</h3>
+        <div class="fg">
+          <label>رابط المنتج ${geminiEnabled ? '<span style="color:#6366F1">(سيتم التحليل تلقائياً)</span>' : ''}</label>
+          <div style="display:flex;gap:8px">
+            <input id="o_url" placeholder="https://www.amazon.com/dp/..." style="direction:ltr;text-align:left;flex:1" oninput="previewLink()" onblur="${geminiEnabled ? 'analyzeUrl()' : ''}">
+            ${geminiEnabled ? '<button type="button" class="btn-primary" onclick="analyzeUrl()" style="white-space:nowrap;padding:11px 18px">🤖 حلّل</button>' : ''}
+          </div>
+          <div class="helper" id="linkPreview"></div>
+        </div>
+
+        <div id="aiStatus" style="display:none"></div>
+        <div id="aiResult"></div>
+        <div id="o_imagePreview" style="margin-top:10px"></div>
+
         <div class="fg">
           <label>المتجر</label>
           <select id="o_store">
@@ -415,10 +576,14 @@ async function renderNewOrder() {
           <label>اسم المنتج</label>
           <input id="o_title" placeholder="مثال: Apple iPhone 15 Pro Max 256GB">
         </div>
-        <div class="fg">
-          <label>رابط المنتج</label>
-          <input id="o_url" placeholder="https://www.amazon.com/dp/..." style="direction:ltr;text-align:left" oninput="previewLink()">
-          <div class="helper" id="linkPreview"></div>
+
+        <div id="sizesBox" style="display:none;margin-top:14px"></div>
+        <div id="colorsBox" style="display:none;margin-top:14px"></div>
+
+        <div class="fg" style="margin-top:14px">
+          <label>📝 ملاحظاتك ومواصفات إضافية</label>
+          <textarea id="o_notes" placeholder="مثال: أرجو اللون الأسود إن لم يتوفر الأزرق، المقاس L إن لم يتوفر M، يرجى التأكد من أن الجهاز أصلي مغلق..."></textarea>
+          <div class="helper">اكتب هنا أي تفاصيل مهمة (لون بديل، مقاس احتياطي، ملاحظات على المنتج) — ستصل للإدارة مع الطلب.</div>
         </div>
       </div>
 
@@ -503,9 +668,37 @@ async function renderNewOrder() {
         ✅ تأكيد الطلب
       </button>
     </div>
+
+    <style>
+      .spinner {
+        width: 24px; height: 24px;
+        border: 3px solid #C7D2FE;
+        border-top-color: #6366F1;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        flex-shrink: 0;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .option-btn {
+        padding: 8px 16px;
+        background: #F1F5F9;
+        border: 2px solid #E2E8F0;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 13px;
+        color: #0F172A;
+        cursor: pointer;
+        transition: .15s;
+      }
+      .option-btn:hover { border-color: #F59E0B; }
+      .option-btn.selected {
+        background: #FEF3C7;
+        border-color: #F59E0B;
+        color: #78350F;
+      }
+    </style>
   `;
 
-  window._selectedNet = wallets[0]?.network || '';
   recalcOrder();
 }
 
@@ -571,6 +764,7 @@ async function recalcOrder() {
 window.recalcOrder = recalcOrder;
 
 async function submitOrder() {
+  const analysis = window._productAnalysis;
   const body = {
     country_id: 1,
     region_id: parseInt(document.getElementById('o_region').value),
@@ -580,9 +774,14 @@ async function submitOrder() {
     store_name: document.getElementById('o_store').value.trim(),
     product_title: document.getElementById('o_title').value.trim(),
     product_url: document.getElementById('o_url').value.trim(),
+    product_image: analysis?.image_url || '',
     product_price_usd: parseFloat(document.getElementById('o_price').value),
     quantity: parseInt(document.getElementById('o_qty').value) || 1,
     weight_kg: parseFloat(document.getElementById('o_weight').value),
+    selected_size: window._selectedSize || '',
+    selected_color: window._selectedColor || '',
+    customer_notes: document.getElementById('o_notes').value.trim(),
+    product_analysis: analysis ? JSON.stringify(analysis) : '',
     shipping_method: document.querySelector('input[name="oship"]:checked')?.value || 'air',
     wallet_network: window._selectedNet || '',
     tx_ref: document.getElementById('o_tx').value.trim(),
@@ -624,13 +823,16 @@ async function renderOrders() {
             <span>طلب <span class="order-num">${esc(o.order_number)}</span></span>
             <span class="status-chip st-${o.status}">${labels[o.status] || o.status}</span>
           </h3>
-          <div class="info-grid">
-            <p><strong>المنتج</strong>${esc(o.product_title)}</p>
-            <p><strong>المتجر</strong>${esc(o.store_name || '-')}</p>
-            <p><strong>المحافظة</strong>${esc(o.region_name || '-')}</p>
-            <p><strong>المستلم</strong>${esc(o.receiver_name)}</p>
-            <p><strong>الهاتف</strong>${esc(o.receiver_phone)}</p>
-            <p><strong>الإجمالي</strong>$${fmt(o.admin_adjusted_usd || o.total_usd)}</p>
+          <div style="display:flex;gap:14px;align-items:start;margin:12px 0">
+            ${o.product_image ? `<img src="${esc(o.product_image)}" style="width:80px;height:80px;object-fit:cover;border-radius:10px;background:#F1F5F9;flex-shrink:0" onerror="this.style.display='none'">` : ''}
+            <div class="info-grid" style="flex:1;margin:0">
+              <p><strong>المنتج</strong>${esc(o.product_title)}</p>
+              <p><strong>المتجر</strong>${esc(o.store_name || '-')}</p>
+              <p><strong>المحافظة</strong>${esc(o.region_name || '-')}</p>
+              <p><strong>المستلم</strong>${esc(o.receiver_name)}</p>
+              <p><strong>الهاتف</strong>${esc(o.receiver_phone)}</p>
+              <p><strong>الإجمالي</strong>$${fmt(o.admin_adjusted_usd || o.total_usd)}</p>
+            </div>
           </div>
           <p class="mini" style="margin-top:10px">📅 ${new Date(o.created_at).toLocaleString('ar-EG')}</p>
           <button class="btn-primary btn-sm" style="margin-top:10px" onclick="navigate('/order/${o.id}')">عرض التفاصيل والتتبع ←</button>
@@ -653,14 +855,24 @@ async function renderOrderDetail(id) {
 
     <div class="summary" style="margin-top:0">
       <h3>📋 تفاصيل المنتج</h3>
-      <div class="info-grid">
-        <p><strong>المتجر</strong>${esc(o.store_name || '-')}</p>
-        <p><strong>اسم المنتج</strong>${esc(o.product_title)}</p>
-        <p><strong>الرابط</strong><a href="${esc(o.product_url)}" target="_blank" style="direction:ltr;display:inline-block;font-size:11px;word-break:break-all">فتح الرابط</a></p>
-        <p><strong>الكمية</strong>${o.quantity}</p>
-        <p><strong>الوزن</strong>${o.weight_kg} كغ</p>
-        <p><strong>طريقة الشحن</strong>${o.shipping_method === 'sea' ? '🚢 بحري' : '✈️ جوي'}</p>
+      <div style="display:flex;gap:18px;align-items:start;flex-wrap:wrap">
+        ${o.product_image ? `<img src="${esc(o.product_image)}" style="width:140px;height:140px;object-fit:cover;border-radius:12px;background:#F1F5F9;flex-shrink:0" onerror="this.style.display='none'">` : ''}
+        <div class="info-grid" style="flex:1;min-width:280px">
+          <p><strong>المتجر</strong>${esc(o.store_name || '-')}</p>
+          <p><strong>اسم المنتج</strong>${esc(o.product_title)}</p>
+          <p><strong>الرابط</strong><a href="${esc(o.product_url)}" target="_blank" style="direction:ltr;display:inline-block;font-size:11px;word-break:break-all">فتح الرابط</a></p>
+          <p><strong>الكمية</strong>${o.quantity}</p>
+          <p><strong>الوزن</strong>${o.weight_kg} كغ</p>
+          <p><strong>طريقة الشحن</strong>${o.shipping_method === 'sea' ? '🚢 بحري' : '✈️ جوي'}</p>
+          ${o.selected_size ? `<p><strong>المقاس</strong>${esc(o.selected_size)}</p>` : ''}
+          ${o.selected_color ? `<p><strong>اللون</strong>${esc(o.selected_color)}</p>` : ''}
+        </div>
       </div>
+      ${o.customer_notes ? `
+        <div style="margin-top:14px;padding:14px;background:#FEF3C7;border-radius:10px;border-right:3px solid #F59E0B">
+          <strong style="color:#78350F;font-size:13px">📝 ملاحظاتك:</strong>
+          <p style="color:#78350F;margin-top:6px;line-height:1.7;font-size:13px">${esc(o.customer_notes)}</p>
+        </div>` : ''}
     </div>
 
     <div class="summary" style="margin-top:16px">
@@ -969,14 +1181,17 @@ async function adminOrders(c) {
   c.innerHTML = `
     <div class="toolbar"><h4>🛒 الطلبات (${orders.length})</h4></div>
     <div class="tbl-wrap"><table>
-      <tr><th>#</th><th>المستلم</th><th>الهاتف</th><th>المحافظة</th><th>المنتج</th><th>الإجمالي</th><th>الحالة</th><th>إجراءات</th></tr>
+      <tr><th>#</th><th>المنتج</th><th>المستلم</th><th>الهاتف</th><th>المحافظة</th><th>الإجمالي</th><th>الحالة</th><th>إجراءات</th></tr>
       ${orders.map(o => `
         <tr>
           <td style="font-family:monospace;font-size:11px">${esc(o.order_number)}</td>
+          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            ${o.product_image ? `<img src="${esc(o.product_image)}" style="width:32px;height:32px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-left:6px" onerror="this.style.display='none'">` : ''}
+            ${esc(o.product_title)}
+          </td>
           <td>${esc(o.receiver_name)}</td>
           <td>${esc(o.receiver_phone)}</td>
           <td>${esc(o.region_name || '-')}</td>
-          <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.product_title)}</td>
           <td>$${fmt(o.admin_adjusted_usd || o.total_usd)}</td>
           <td><span class="status-chip st-${o.status}">${labels[o.status] || o.status}</span></td>
           <td>
@@ -997,6 +1212,20 @@ function editOrder(o) {
     <div class="modal">
       <button class="modal-close" onclick="this.closest('.modal-bg').remove()">✕</button>
       <h3>تعديل الطلب ${esc(o.order_number)}</h3>
+      ${o.product_image ? `
+        <div style="display:flex;gap:12px;align-items:center;padding:12px;background:#F8FAFC;border-radius:10px;margin-bottom:14px">
+          <img src="${esc(o.product_image)}" style="width:70px;height:70px;object-fit:cover;border-radius:10px" onerror="this.style.display='none'">
+          <div style="flex:1">
+            <p style="font-weight:700;font-size:13px">${esc(o.product_title)}</p>
+            ${o.selected_size ? `<p class="mini">📏 المقاس: ${esc(o.selected_size)}</p>` : ''}
+            ${o.selected_color ? `<p class="mini">🎨 اللون: ${esc(o.selected_color)}</p>` : ''}
+          </div>
+        </div>` : ''}
+      ${o.customer_notes ? `
+        <div class="fg" style="background:#FEF3C7;padding:12px;border-radius:10px;border-right:3px solid #F59E0B">
+          <label style="color:#78350F">📝 ملاحظات العميل:</label>
+          <p style="color:#78350F;font-size:13px;line-height:1.7">${esc(o.customer_notes)}</p>
+        </div>` : ''}
       <div class="fg"><label>الحالة:</label>
         <select id="mo_status">
           ${Object.keys(labels).map(k => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${labels[k]}</option>`).join('')}
