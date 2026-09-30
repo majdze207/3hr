@@ -13,6 +13,7 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
 const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const GROQ_MAX_RETRIES = parseInt(process.env.GROQ_MAX_RETRIES || '4');
 const GROQ_INITIAL_DELAY_MS = parseInt(process.env.GROQ_INITIAL_DELAY_MS || '1000');
+const SCRAPINGANT_API_KEY = process.env.SCRAPINGANT_API_KEY || '';
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'admin@gmail.com')
   .split(',')
   .map(e => e.trim().toLowerCase())
@@ -221,9 +222,40 @@ const RE_EMAIL = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i;
 const RE_PHONE = /^09\d{8}$/;
 const RE_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_\-+=\[\]{};:'",.<>\/?\\|`~]).{8,}$/;
 
-// ==================== جلب صفحة المنتج ====================
+// ==================== جلب صفحة المنتج عبر ScrapingAnt ====================
 async function fetchProductPage(url) {
+  // الطريقة 1: عبر ScrapingAnt (مع IP سكني + متصفح كامل)
+  if (SCRAPINGANT_API_KEY) {
+    try {
+      const apiUrl = 'https://api.scrapingant.com/v2/general?' + new URLSearchParams({
+        url: url,
+        'x-api-key': SCRAPINGANT_API_KEY,
+        browser: 'true',
+        'proxy_country': 'US'
+      }).toString();
+      console.log('🌐 جلب عبر ScrapingAnt...');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 55000);
+      const resp = await fetch(apiUrl, { method: 'GET', signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (resp.ok) {
+        const html = await resp.text();
+        console.log('✅ ScrapingAnt نجح: ' + html.length + ' حرف');
+        return html;
+      }
+      const errTxt = await resp.text();
+      console.log('⚠️ ScrapingAnt فشل (' + resp.status + '):', errTxt.slice(0, 200));
+    } catch (e) {
+      console.log('⚠️ ScrapingAnt خطأ:', e.message);
+    }
+  } else {
+    console.log('⚠️ SCRAPINGANT_API_KEY غير مضبوط — تجاوز الوصول المباشر');
+  }
+
+  // الطريقة 2: محاولة مباشرة (احتياطي)
   try {
+    console.log('🌐 محاولة جلب مباشر (احتياطي)...');
     const resp = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -235,9 +267,10 @@ async function fetchProductPage(url) {
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const html = await resp.text();
+    console.log('✅ مباشر: ' + html.length + ' حرف');
     return html;
   } catch (e) {
-    console.log('⚠️ فشل جلب الصفحة:', e.message);
+    console.log('⚠️ فشل الجلب المباشر:', e.message);
     return null;
   }
 }
@@ -249,12 +282,12 @@ function extractPageContent(html) {
   const lowerHtml = html.toLowerCase();
   const blockSignals = ['captcha','robot check','are you a human','access denied',
     'automated queries','unusual traffic','verify you are human',
-    'please enable javascript','cf-browser-verification','just a moment','attention required'];
+    'cf-browser-verification','just a moment','attention required'];
   if (blockSignals.some(s => lowerHtml.includes(s))) {
     console.log('🚫 الصفحة محجوبة (captcha/block)');
     return null;
   }
-  if (html.length < 8000) {
+  if (html.length < 5000) {
     console.log('⚠️ الصفحة قصيرة جداً:', html.length);
     return null;
   }
@@ -329,11 +362,11 @@ async function analyzeProductUrl(url) {
   const html = await fetchProductPage(url);
   const pageData = extractPageContent(html);
 
-  console.log('📄 حالة الجلب:', pageData ? '✅ نجح' : '❌ فشل/محجوب');
+  console.log('📄 حالة الاستخراج:', pageData ? '✅ نجح' : '❌ فشل');
   if (pageData) {
-    console.log('   عنوان:', (pageData.title || '').slice(0, 80));
+    console.log('   عنوان:', (pageData.title || '').slice(0, 100));
     console.log('   سعر:', pageData.price || '(none)');
-    console.log('   صورة:', (pageData.image || '').slice(0, 60));
+    console.log('   صورة:', (pageData.image || '').slice(0, 80));
   }
 
   if (!pageData) {
@@ -919,5 +952,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   🌐  http://localhost:' + PORT);
   console.log('   👤  admin@gmail.com  /  Admin@123');
   console.log('   🤖  Groq: ' + (GROQ_API_KEY ? '✅ ' + GROQ_MODEL : '❌ غير مضبوط'));
+  console.log('   🕸️  ScrapingAnt: ' + (SCRAPINGANT_API_KEY ? '✅ مُفعّل' : '❌ غير مضبوط'));
   console.log('════════════════════════════════════════\n');
 });
