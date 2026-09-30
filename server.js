@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'wasalni-secret-2025';
 const DB_PATH = process.env.DB_PATH || 'wasalni.db';
 const ADMIN_EMAILS = ['admin@gmail.com'];
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -45,8 +46,11 @@ CREATE TABLE IF NOT EXISTS orders (
   country_id INTEGER, region_id INTEGER,
   receiver_name TEXT NOT NULL, receiver_phone TEXT NOT NULL, full_address TEXT NOT NULL,
   store_name TEXT, product_title TEXT NOT NULL, product_url TEXT NOT NULL,
+  product_image TEXT,
   product_price_usd REAL NOT NULL, quantity INTEGER DEFAULT 1,
   weight_kg REAL NOT NULL, shipping_method TEXT DEFAULT 'air',
+  selected_size TEXT, selected_color TEXT, customer_notes TEXT,
+  product_analysis TEXT,
   shipping_cost_usd REAL NOT NULL, customs_usd REAL NOT NULL,
   commission_usd REAL NOT NULL, delivery_fee_usd REAL NOT NULL,
   total_usd REAL NOT NULL, admin_adjusted_usd REAL,
@@ -99,6 +103,11 @@ CREATE TABLE IF NOT EXISTS notifications (
 `);
 
 try { db.exec('ALTER TABLE orders ADD COLUMN admin_customs_usd REAL'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN product_image TEXT'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN selected_size TEXT'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN selected_color TEXT'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN customer_notes TEXT'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN product_analysis TEXT'); } catch (e) {}
 
 const STATUS_LABELS = {
   awaiting_payment: '⏳ بانتظار الدفع',
@@ -128,7 +137,7 @@ function seed() {
   setC.run('site_name', 'وصلني');
   setC.run('site_tagline', 'وسيطك للتسوق من أمازون والعالم — نوصلك إلى سوريا');
   setC.run('hero_title', '🛒 تسوّق من أي متجر عالمي... ونوصلك إلى سوريا');
-  setC.run('hero_subtitle', 'الصق رابط المنتج من أمازون أو علي إكسبريس أو إي باي — احسب السعر النهائي وادفع بالكريبتو، ونحن نتكفل بالباقي.');
+  setC.run('hero_subtitle', 'الصق رابط المنتج من أمازون أو علي إكسبريس أو إي باي — استخرج التفاصيل تلقائياً وادفع بالكريبتو.');
   setC.run('about_text', 'وصلني هي منصة وساطة تسوق ولوجستيات دولية، تتيح لأهلنا في سوريا الشراء من أكبر المتاجر العالمية (Amazon, AliExpress, eBay وغيرها) ودفع المبلغ بالكريبتو USDT، ثم تتبع شحنتهم مرحلة بمرحلة حتى الاستلام في سوريا.');
   setC.run('terms_text', 'باستخدامك للمنصة فإنك توافق على الشروط والأحكام: أنت مسؤول عن صحة المعلومات المدخلة، ومدة التسليم تتراوح بين 3 إلى 6 أسابيع حسب الوزن والدولة المصدرة وشركة الشحن.');
   setC.run('refund_text', 'نضمن لك استرجاع كامل المبلغ بالـ USDT في حال عدم وصول الشحنة خلال المدة القصوى المحددة (8 أسابيع)، أو في حال تلف المنتج أثناء الشحن.');
@@ -154,12 +163,8 @@ function seed() {
   const syria = db.prepare("SELECT id FROM countries WHERE name_en='Syria'").get();
   if (syria && db.prepare('SELECT COUNT(*) c FROM regions WHERE country_id=?').get(syria.id).c === 0) {
     const ins = db.prepare('INSERT INTO regions (country_id, name_ar, delivery_fee_usd) VALUES (?, ?, ?)');
-    const gov = [
-      ['دمشق', 0], ['ريف دمشق', 0], ['حلب', 0], ['حمص', 0],
-      ['حماة', 0], ['اللاذقية', 0], ['طرطوس', 0], ['إدلب', 0],
-      ['دير الزور', 0], ['الرقة', 0], ['الحسكة', 0], ['درعا', 0], ['السويداء', 0], ['القنيطرة', 0]
-    ];
-    gov.forEach(([name, fee]) => ins.run(syria.id, name, fee));
+    const gov = ['دمشق','ريف دمشق','حلب','حمص','حماة','اللاذقية','طرطوس','إدلب','دير الزور','الرقة','الحسكة','درعا','السويداء','القنيطرة'];
+    gov.forEach(name => ins.run(syria.id, name, 0));
   }
 
   if (db.prepare('SELECT COUNT(*) c FROM stores').get().c === 0) {
@@ -206,18 +211,111 @@ function adminOnly(req, res, next) {
   if (!req.user || !req.user.is_admin) return res.status(403).json({ detail: 'صلاحيات المدير مطلوبة' });
   next();
 }
-function maskName(name) {
-  if (!name) return 'م***';
-  const p = name.trim().split(/\s+/);
-  const f = p[0] || '', l = p[p.length - 1] || '';
-  if (f.length <= 1) return '***';
-  return f.charAt(0) + '***' + (l && l !== f ? l.charAt(0) : '');
-}
 
 const RE_EMAIL = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i;
 const RE_PHONE = /^09\d{8}$/;
 const RE_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_\-+=\[\]{};:'",.<>\/?\\|`~]).{8,}$/;
 
+// ==================== Gemini URL Analysis ====================
+async function analyzeProductUrl(url) {
+  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY غير مضبوط');
+
+  const model = 'gemini-2.0-flash-exp';
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+
+  const prompt = `You are a product URL analyzer. Analyze this product URL and return ONLY a valid JSON object (no markdown, no code blocks, no explanation).
+
+URL: ${url}
+
+Return this EXACT JSON structure:
+{
+  "found": true or false,
+  "product_title": "full product name in original language",
+  "price_usd": number (0 if unknown),
+  "image_url": "direct image URL or empty string",
+  "sizes": ["list of available sizes if any, empty array otherwise"],
+  "colors": ["list of available colors if any, empty array otherwise"],
+  "weight_kg": number (estimate based on product category),
+  "store_name": "store name",
+  "description": "short product description",
+  "confidence": "high" or "medium" or "low"
+}
+
+Weight estimation guidelines by category:
+- Phone/tablet: 0.5 kg
+- Laptop: 2.5 kg
+- Watch/headphones: 0.4 kg
+- Book: 0.6 kg
+- Shoes: 1.2 kg
+- T-shirt/clothing: 0.3 kg
+- Camera: 1.5 kg
+- Kitchen appliance: 3 kg
+- Toy: 0.8 kg
+
+If you cannot access the URL or find the product, set "found": false and use empty/default values.`;
+
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    tools: [{ url_context: {} }],
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: 'application/json',
+      maxOutputTokens: 2048
+    }
+  };
+
+  const resp = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error('Gemini API error: ' + txt.slice(0, 300));
+  }
+
+  const data = await resp.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{"found":false}';
+
+  let parsed;
+  try { parsed = JSON.parse(text); }
+  catch (e) {
+    const m = text.match(/\{[\s\S]*\}/);
+    parsed = m ? JSON.parse(m[0]) : { found: false };
+  }
+
+  return {
+    found: !!parsed.found,
+    product_title: parsed.product_title || '',
+    price_usd: parseFloat(parsed.price_usd) || 0,
+    image_url: parsed.image_url || '',
+    sizes: Array.isArray(parsed.sizes) ? parsed.sizes : [],
+    colors: Array.isArray(parsed.colors) ? parsed.colors : [],
+    weight_kg: parseFloat(parsed.weight_kg) || 1,
+    store_name: parsed.store_name || '',
+    description: parsed.description || '',
+    confidence: parsed.confidence || 'medium'
+  };
+}
+
+app.post('/api/analyze-url', auth, async (req, res) => {
+  const { url } = req.body;
+  if (!url || !/^https?:\/\/.+/i.test(url)) {
+    return res.status(400).json({ detail: 'رابط غير صالح — يجب أن يبدأ بـ http:// أو https://' });
+  }
+  if (!GEMINI_API_KEY) {
+    return res.status(503).json({ detail: 'خدمة تحليل الروابط غير مفعّلة حالياً — يرجى إضافة GEMINI_API_KEY' });
+  }
+  try {
+    const result = await analyzeProductUrl(url);
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(500).json({ detail: e.message || 'فشل تحليل الرابط' });
+  }
+});
+
+// ==================== المصادقة ====================
 app.post('/api/auth/register', (req, res) => {
   const { name, email, phone, password } = req.body;
   if (!name || name.trim().length < 3) return res.status(400).json({ detail: 'الاسم مطلوب' });
@@ -262,12 +360,11 @@ app.get('/api/public/data', (req, res) => {
   const stores = db.prepare('SELECT * FROM stores WHERE active = 1 ORDER BY sort_order').all();
   const wallets = db.prepare('SELECT * FROM wallets WHERE active = 1 ORDER BY sort_order').all();
   const testimonials = db.prepare('SELECT * FROM testimonials WHERE active = 1 ORDER BY sort_order, id DESC').all();
-  res.json({ content, pricing, countries, regions, stores, wallets, testimonials, status_labels: STATUS_LABELS });
+  res.json({ content, pricing, countries, regions, stores, wallets, testimonials, status_labels: STATUS_LABELS, gemini_enabled: !!GEMINI_API_KEY });
 });
 
 app.post('/api/quote', (req, res) => {
   const { product_price_usd, quantity = 1, weight_kg, shipping_method = 'air', region_id } = req.body;
-
   if (!product_price_usd || product_price_usd <= 0) return res.status(400).json({ detail: 'سعر المنتج مطلوب' });
   if (!weight_kg || weight_kg <= 0) return res.status(400).json({ detail: 'الوزن مطلوب' });
   if (!region_id) return res.status(400).json({ detail: 'المحافظة مطلوبة' });
@@ -278,19 +375,12 @@ app.post('/api/quote', (req, res) => {
   if (!region) return res.status(400).json({ detail: 'المحافظة غير موجودة' });
 
   const qty = Math.max(1, parseInt(quantity));
-
   const rawWeight = parseFloat(weight_kg) * qty;
   const roundedWeight = Math.ceil(rawWeight);
-
   const perKg = shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
   const shippingCost = roundedWeight * perKg;
-
   const productCost = product_price_usd * qty;
-
   const customs = productCost * (pricing.customs_percent / 100);
-
-  const deliveryFee = 0;
-
   const total = productCost + shippingCost + customs;
 
   res.json({
@@ -319,8 +409,9 @@ function genOrderNumber() {
 app.post('/api/orders', auth, (req, res) => {
   const {
     country_id, region_id, receiver_name, receiver_phone, full_address,
-    store_name, product_title, product_url,
+    store_name, product_title, product_url, product_image,
     product_price_usd, quantity = 1, weight_kg,
+    selected_size, selected_color, customer_notes, product_analysis,
     shipping_method = 'air', wallet_network, tx_ref, tx_proof_url
   } = req.body;
 
@@ -342,16 +433,12 @@ app.post('/api/orders', auth, (req, res) => {
   const country = db.prepare('SELECT * FROM countries WHERE id = ?').get(country_id || region.country_id);
 
   const qty = Math.max(1, parseInt(quantity));
-
   const rawWeight = parseFloat(weight_kg) * qty;
   const roundedWeight = Math.ceil(rawWeight);
-
   const productCost = product_price_usd * qty;
   const perKg = shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
   const shippingCost = roundedWeight * perKg;
   const customs = productCost * (pricing.customs_percent / 100);
-  const commission = 0;
-  const deliveryFee = 0;
   const total = productCost + shippingCost + customs;
 
   const orderNumber = genOrderNumber();
@@ -360,16 +447,18 @@ app.post('/api/orders', auth, (req, res) => {
   const r = db.prepare(`INSERT INTO orders
     (order_number, user_id, user_name, country_id, region_id,
      receiver_name, receiver_phone, full_address,
-     store_name, product_title, product_url,
+     store_name, product_title, product_url, product_image,
      product_price_usd, quantity, weight_kg, shipping_method,
+     selected_size, selected_color, customer_notes, product_analysis,
      shipping_cost_usd, customs_usd, commission_usd, delivery_fee_usd, total_usd,
      wallet_network, tx_ref, tx_proof_url, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(
       orderNumber, req.user.id, userName, country ? country.id : null, region.id,
       receiver_name.trim(), receiver_phone, full_address.trim(),
-      store_name || '', product_title.trim(), product_url.trim(),
+      store_name || '', product_title.trim(), product_url.trim(), product_image || '',
       product_price_usd, qty, rawWeight, shipping_method,
+      selected_size || '', selected_color || '', customer_notes || '', product_analysis || '',
       +shippingCost.toFixed(2), +customs.toFixed(2), 0, 0, +total.toFixed(2),
       wallet_network || '', tx_ref || '', tx_proof_url || '', 'awaiting_payment'
     );
@@ -462,7 +551,6 @@ app.put('/api/admin/orders/:id', auth, adminOnly, (req, res) => {
   const { status, admin_adjusted_usd, admin_customs_usd, notes, tracking_note } = req.body;
   const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
-
   if (status && !STATUS_LABELS[status]) return res.status(400).json({ detail: 'حالة غير صحيحة' });
 
   const newAdjusted = admin_adjusted_usd !== undefined ? admin_adjusted_usd : o.admin_adjusted_usd;
@@ -665,5 +753,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   📦  وصلني — منصة الوساطة اللوجستية');
   console.log('   🌐  http://localhost:' + PORT);
   console.log('   👤  admin@gmail.com  /  Admin@123');
+  console.log('   🤖  Gemini: ' + (GEMINI_API_KEY ? '✅ مُفعّل' : '❌ غير مضبوط'));
   console.log('════════════════════════════════════════\n');
 });
