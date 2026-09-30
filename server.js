@@ -220,7 +220,7 @@ const RE_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_\-+=\[\]{};:'",.<>\
 async function analyzeProductUrl(url) {
   if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY غير مضبوط');
 
-  const model = 'gemini-2.0-flash-exp';
+  const model = 'gemini-3.8-flash';
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
   const prompt = `You are a product URL analyzer. Analyze this product URL and return ONLY a valid JSON object (no markdown, no code blocks, no explanation).
