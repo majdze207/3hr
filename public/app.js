@@ -155,7 +155,7 @@ async function renderHome() {
     </div>
 
     <div class="features">
-      <div class="feat"><div class="ic">🤖</div><h4>تحليل ذكي بالذكاء الاصطناعي</h4><p>الصق الرابط واستخرج التفاصيل تلقائياً</p></div>
+      <div class="feat"><div class="ic">🤖</div><h4>تحليل ذكي</h4><p>الصق الرابط واستخرج التفاصيل تلقائياً</p></div>
       <div class="feat"><div class="ic">🧮</div><h4>حاسبة شفافة</h4><p>سعر نهائي واضح بدون مفاجآت</p></div>
       <div class="feat"><div class="ic">💳</div><h4>دفع USDT</h4><p>سريع وآمن — TRC20 / BEP20</p></div>
       <div class="feat"><div class="ic">🚚</div><h4>تتبع مباشر</h4><p>8 مراحل من الشراء حتى التسليم</p></div>
@@ -388,7 +388,7 @@ async function renderHelp() {
     </div>`;
 }
 
-// ==================== Gemini URL Analysis ====================
+// ==================== تحليل الرابط ====================
 async function analyzeUrl() {
   const url = document.getElementById('o_url')?.value.trim();
   const statusBox = document.getElementById('aiStatus');
@@ -402,8 +402,8 @@ async function analyzeUrl() {
       <div style="display:flex;align-items:center;gap:12px;padding:14px;background:#EEF2FF;border-radius:12px;border-right:4px solid #6366F1">
         <div class="spinner"></div>
         <div>
-          <strong style="color:#4338CA">🤖 جاري تحليل الرابط بالذكاء الاصطناعي…</strong>
-          <p style="font-size:12px;color:#6366F1;margin-top:4px">يتم استخراج الاسم والسعر والصورة والمقاسات والألوان والوزن</p>
+          <strong style="color:#4338CA">🤖 جاري تحليل الرابط…</strong>
+          <p style="font-size:12px;color:#6366F1;margin-top:4px">قد تأخذ العملية 10-20 ثانية</p>
         </div>
       </div>`;
   }
@@ -413,83 +413,77 @@ async function analyzeUrl() {
     const r = await api('/api/analyze-url', 'POST', { url });
     if (statusBox) statusBox.style.display = 'none';
 
-    if (!r.found) {
+    const hasTitle = r.product_title && r.product_title.trim().length >= 5;
+    const hasPrice = r.price_usd && r.price_usd > 0;
+    const hasImage = r.image_url && r.image_url.length > 10;
+
+    if (!r.found || !hasTitle) {
       if (resultBox) resultBox.innerHTML = `
         <div class="warn" style="background:#FEF3C7;border-color:#FCD34D;border-right-color:#F59E0B;color:#78350F">
-          ⚠️ لم نستطع استخراج تفاصيل كاملة من هذا الرابط. يرجى إدخال التفاصيل يدوياً أدناه.
+          ⚠️ <strong>لم نستطع استخراج تفاصيل المنتج تلقائياً</strong><br>
+          <span style="font-size:13px">السبب المحتمل: المتجر يحجب الطلبات الآلية. يرجى إدخال التفاصيل يدوياً أدناه.</span>
         </div>`;
+      toast('تعذّر استخراج التفاصيل — أدخلها يدوياً', 'error');
       return;
     }
 
-    window._productAnalysis = r;
-
-    if (r.product_title) {
+    let filled = 0;
+    if (hasTitle) {
       const el = document.getElementById('o_title');
-      if (el && !el.value) el.value = r.product_title;
+      if (el && !el.value) { el.value = r.product_title; filled++; }
     }
-    if (r.price_usd) {
+    if (hasPrice) {
       const el = document.getElementById('o_price');
-      if (el) el.value = r.price_usd;
+      if (el && !el.value) { el.value = r.price_usd; filled++; }
     }
     if (r.weight_kg) {
       const el = document.getElementById('o_weight');
-      if (el && !el.value) el.value = r.weight_kg;
+      if (el && !el.value) { el.value = r.weight_kg; filled++; }
     }
     if (r.store_name) {
       const sel = document.getElementById('o_store');
-      if (sel) {
-        for (const opt of sel.options) {
-          if (opt.value.includes(r.store_name) || r.store_name.includes(opt.value)) {
-            sel.value = opt.value; break;
-          }
-        }
-      }
+      if (sel) for (const o of sel.options)
+        if (o.value.includes(r.store_name) || r.store_name.includes(o.value)) { sel.value = o.value; break; }
     }
 
     const imgBox = document.getElementById('o_imagePreview');
-    if (imgBox) {
-      if (r.image_url) {
-        imgBox.innerHTML = `
-          <div style="display:flex;gap:14px;align-items:start;padding:14px;background:#F0FDF4;border-radius:12px;border-right:4px solid #10B981">
-            <img src="${esc(r.image_url)}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;background:#fff" onerror="this.style.display='none'">
-            <div style="flex:1">
-              <p style="font-weight:700;color:#065F46;margin-bottom:4px">✅ تم استخراج صورة المنتج</p>
-              <p style="font-size:12px;color:#10B981">الثقة: ${r.confidence === 'high' ? 'عالية' : r.confidence === 'low' ? 'منخفضة' : 'متوسطة'}</p>
-            </div>
-          </div>`;
-      } else {
-        imgBox.innerHTML = '';
-      }
+    if (imgBox && hasImage) {
+      imgBox.innerHTML = `
+        <div style="display:flex;gap:14px;align-items:start;padding:14px;background:#F0FDF4;border-radius:12px;border-right:4px solid #10B981">
+          <img src="${esc(r.image_url)}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;background:#fff" onerror="this.style.display='none'">
+          <div style="flex:1">
+            <p style="font-weight:700;color:#065F46;margin-bottom:4px">✅ صورة المنتج</p>
+            <p style="font-size:12px;color:#10B981">الثقة: ${r.confidence === 'high' ? 'عالية' : r.confidence === 'low' ? 'منخفضة' : 'متوسطة'}</p>
+          </div>
+        </div>`;
+    } else if (imgBox) {
+      imgBox.innerHTML = '';
     }
 
     const sizesBox = document.getElementById('sizesBox');
-    if (sizesBox) {
-      if (r.sizes && r.sizes.length) {
-        sizesBox.style.display = 'block';
-        sizesBox.innerHTML = `
-          <label style="font-size:14px;font-weight:700;display:block;margin-bottom:8px;color:#0F172A">📏 اختر المقاس:</label>
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
-            ${r.sizes.map(s => `<button type="button" class="option-btn" data-size="${esc(s)}" onclick="selectSize(this)">${esc(s)}</button>`).join('')}
-          </div>`;
-      } else {
-        sizesBox.style.display = 'none';
-        sizesBox.innerHTML = '';
-      }
+    if (sizesBox && r.sizes && r.sizes.length) {
+      sizesBox.style.display = 'block';
+      sizesBox.innerHTML = `
+        <label style="font-size:14px;font-weight:700;display:block;margin-bottom:8px;color:#0F172A">📏 اختر المقاس:</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          ${r.sizes.map(s => `<button type="button" class="option-btn" data-size="${esc(s)}" onclick="selectSize(this)">${esc(s)}</button>`).join('')}
+        </div>`;
+    } else if (sizesBox) {
+      sizesBox.style.display = 'none';
+      sizesBox.innerHTML = '';
     }
 
     const colorsBox = document.getElementById('colorsBox');
-    if (colorsBox) {
-      if (r.colors && r.colors.length) {
-        colorsBox.style.display = 'block';
-        colorsBox.innerHTML = `
-          <label style="font-size:14px;font-weight:700;display:block;margin-bottom:8px;color:#0F172A">🎨 اختر اللون:</label>
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
-            ${r.colors.map(c => `<button type="button" class="option-btn" data-color="${esc(c)}" onclick="selectColor(this)">${esc(c)}</button>`).join('')}
-          </div>`;
-      } else {
-        colorsBox.style.display = 'none';
-        colorsBox.innerHTML = '';
-      }
+    if (colorsBox && r.colors && r.colors.length) {
+      colorsBox.style.display = 'block';
+      colorsBox.innerHTML = `
+        <label style="font-size:14px;font-weight:700;display:block;margin-bottom:8px;color:#0F172A">🎨 اختر اللون:</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          ${r.colors.map(c => `<button type="button" class="option-btn" data-color="${esc(c)}" onclick="selectColor(this)">${esc(c)}</button>`).join('')}
+        </div>`;
+    } else if (colorsBox) {
+      colorsBox.style.display = 'none';
+      colorsBox.innerHTML = '';
     }
 
     if (r.description) {
@@ -497,14 +491,11 @@ async function analyzeUrl() {
       if (notesEl && !notesEl.value) notesEl.value = r.description;
     }
 
-    if (resultBox) {
-      resultBox.innerHTML = `
-        <div style="background:#EEF2FF;padding:14px;border-radius:12px;border-right:4px solid #6366F1;margin-top:12px">
-          <p style="font-weight:700;color:#4338CA;margin-bottom:8px">🤖 ملخص تحليل الذكاء الاصطناعي</p>
-          ${r.description ? `<p style="font-size:13px;color:#4F46E5;line-height:1.6;margin-bottom:6px">${esc(r.description)}</p>` : ''}
-          <p style="font-size:12px;color:#6366F1">تم ملء الحقول تلقائياً — يمكنك تعديلها قبل التأكيد.</p>
-        </div>`;
-    }
+    if (resultBox) resultBox.innerHTML = `
+      <div style="background:#EEF2FF;padding:14px;border-radius:12px;border-right:4px solid #6366F1;margin-top:12px">
+        <p style="font-weight:700;color:#4338CA;margin-bottom:6px">🤖 تم التحليل بنجاح</p>
+        <p style="font-size:12px;color:#6366F1">تم ملء ${filled} حقلاً تلقائياً — يمكنك التعديل قبل التأكيد.</p>
+      </div>`;
 
     recalcOrder();
     toast('✅ تم تحليل الرابط بنجاح');
@@ -927,13 +918,6 @@ async function renderOrderDetail(id) {
       </div>
     </div>
 
-    ${o.status === 'awaiting_payment' && !o.tx_ref ? `
-      <div class="summary" style="margin-top:16px;background:#FEF3C7;border:1px solid #FCD34D">
-        <h3>⏳ لم يتم الدفع بعد</h3>
-        <p style="margin-bottom:14px">يرجى تحويل المبلغ بالـ USDT إلى إحدى المحافظ أدناه ثم إرسال رقم التحويل.</p>
-        <div id="payWallets"></div>
-      </div>` : ''}
-
     ${o.notes ? `
       <div class="summary" style="margin-top:16px">
         <h3>📝 ملاحظات الإدارة</h3>
@@ -1232,7 +1216,7 @@ function editOrder(o) {
         </select>
       </div>
       <div class="fg" style="background:#FEF3C7;padding:14px;border-radius:10px;border-right:3px solid #F59E0B">
-        <label style="color:#78350F">🏛️ تعديل قيمة الجمارك (للطلبات الخاصة):</label>
+        <label style="color:#78350F">🏛️ تعديل قيمة الجمارك:</label>
         <input type="number" step="0.01" id="mo_customs" value="${fmt(currentCustoms)}" placeholder="${fmt(o.customs_usd)}">
         <p class="mini" style="margin-top:6px;color:#78350F">القيمة الحالية: $${fmt(o.customs_usd)} — عند التعديل سيُعاد حساب الإجمالي تلقائياً.</p>
       </div>
