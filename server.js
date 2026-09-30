@@ -7,10 +7,16 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'wasalni-secret-2025';
+const JWT_SECRET = process.env.JWT_SECRET || 'wasalni-dev-secret-change-me';
 const DB_PATH = process.env.DB_PATH || 'wasalni.db';
-const ADMIN_EMAILS = ['admin@gmail.com'];
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_MAX_RETRIES = parseInt(process.env.GROQ_MAX_RETRIES || '4');
+const GROQ_INITIAL_DELAY_MS = parseInt(process.env.GROQ_INITIAL_DELAY_MS || '1000');
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'admin@gmail.com')
+  .split(',')
+  .map(e => e.trim().toLowerCase())
+  .filter(Boolean);
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -216,16 +222,13 @@ const RE_EMAIL = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i;
 const RE_PHONE = /^09\d{8}$/;
 const RE_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_\-+=\[\]{};:'",.<>\/?\\|`~]).{8,}$/;
 
-// ==================== Gemini URL Analysis ====================
+// ==================== Groq URL Analysis ====================
 async function analyzeProductUrl(url) {
-  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY غير مضبوط');
+  if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY غير مضبوط');
 
-  const model = 'gemini-3.5-flash';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+  const endpoint = 'https://api.groq.com/openai/v1/chat/completions';
 
-  const prompt = `You are a product URL analyzer. Analyze this product URL and return ONLY a valid JSON object (no markdown, no code blocks, no explanation).
-
-URL: ${url}
+  const systemPrompt = `You are a product URL analyzer. You MUST return ONLY a valid JSON object, no markdown, no code blocks, no explanation, no extra text.
 
 Return this EXACT JSON structure:
 {
@@ -254,49 +257,89 @@ Weight estimation guidelines by category:
 
 If you cannot access the URL or find the product, set "found": false and use empty/default values.`;
 
+  const userPrompt = `Analyze this product URL and return the JSON. The URL is: ${url}`;
+
   const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    tools: [{ url_context: {} }],
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: 'application/json',
-      maxOutputTokens: 2048
+    model: GROQ_MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    temperature: 0.1,
+    response_format: { type: 'json_object' },
+    stream: false
+  };
+
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt++) {
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + GROQ_API_KEY
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        const text = data.choices?.[0]?.message?.content || '{"found":false}';
+
+        let parsed;
+        try { parsed = JSON.parse(text); }
+        catch (e) {
+          const m = text.match(/\{[\s\S]*\}/);
+          parsed = m ? JSON.parse(m[0]) : { found: false };
+        }
+
+        return {
+          found: !!parsed.found,
+          product_title: parsed.product_title || '',
+          price_usd: parseFloat(parsed.price_usd) || 0,
+          image_url: parsed.image_url || '',
+          sizes: Array.isArray(parsed.sizes) ? parsed.sizes : [],
+          colors: Array.isArray(parsed.colors) ? parsed.colors : [],
+          weight_kg: parseFloat(parsed.weight_kg) || 1,
+          store_name: parsed.store_name || '',
+          description: parsed.description || '',
+          confidence: parsed.confidence || 'medium'
+        };
+      }
+
+      if ([429, 500, 502, 503, 504].includes(resp.status)) {
+        const txt = await resp.text();
+        lastError = new Error(`Groq API ${resp.status}: ${txt.slice(0, 200)}`);
+
+        if (attempt < GROQ_MAX_RETRIES) {
+          const delay = GROQ_INITIAL_DELAY_MS * Math.pow(2, attempt);
+          const jitter = Math.floor(Math.random() * 500);
+          console.log(`⏳ محاولة ${attempt + 1} فشلت (${resp.status}) — انتظار ${delay + jitter}ms ثم إعادة المحاولة...`);
+          await new Promise(r => setTimeout(r, delay + jitter));
+          continue;
+        }
+        throw lastError;
+      }
+
+      const txt = await resp.text();
+      throw new Error(`Groq API error: ${txt.slice(0, 300)}`);
+
+    } catch (e) {
+      if (e.message && e.message.includes('Groq API')) throw e;
+      lastError = e;
+      if (attempt < GROQ_MAX_RETRIES) {
+        const delay = GROQ_INITIAL_DELAY_MS * Math.pow(2, attempt);
+        const jitter = Math.floor(Math.random() * 500);
+        console.log(`⏳ خطأ شبكة — انتظار ${delay + jitter}ms ثم إعادة المحاولة...`);
+        await new Promise(r => setTimeout(r, delay + jitter));
+        continue;
+      }
+      throw lastError;
     }
-  };
-
-  const resp = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-
-  if (!resp.ok) {
-    const txt = await resp.text();
-    throw new Error('Gemini API error: ' + txt.slice(0, 300));
   }
 
-  const data = await resp.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{"found":false}';
-
-  let parsed;
-  try { parsed = JSON.parse(text); }
-  catch (e) {
-    const m = text.match(/\{[\s\S]*\}/);
-    parsed = m ? JSON.parse(m[0]) : { found: false };
-  }
-
-  return {
-    found: !!parsed.found,
-    product_title: parsed.product_title || '',
-    price_usd: parseFloat(parsed.price_usd) || 0,
-    image_url: parsed.image_url || '',
-    sizes: Array.isArray(parsed.sizes) ? parsed.sizes : [],
-    colors: Array.isArray(parsed.colors) ? parsed.colors : [],
-    weight_kg: parseFloat(parsed.weight_kg) || 1,
-    store_name: parsed.store_name || '',
-    description: parsed.description || '',
-    confidence: parsed.confidence || 'medium'
-  };
+  throw lastError || new Error('فشل تحليل الرابط بعد عدة محاولات');
 }
 
 app.post('/api/analyze-url', auth, async (req, res) => {
@@ -304,8 +347,8 @@ app.post('/api/analyze-url', auth, async (req, res) => {
   if (!url || !/^https?:\/\/.+/i.test(url)) {
     return res.status(400).json({ detail: 'رابط غير صالح — يجب أن يبدأ بـ http:// أو https://' });
   }
-  if (!GEMINI_API_KEY) {
-    return res.status(503).json({ detail: 'خدمة تحليل الروابط غير مفعّلة حالياً — يرجى إضافة GEMINI_API_KEY' });
+  if (!GROQ_API_KEY) {
+    return res.status(503).json({ detail: 'خدمة تحليل الروابط غير مفعّلة حالياً — يرجى إضافة GROQ_API_KEY' });
   }
   try {
     const result = await analyzeProductUrl(url);
@@ -324,7 +367,7 @@ app.post('/api/auth/register', (req, res) => {
   if (!password || !RE_PASSWORD.test(password)) return res.status(400).json({ detail: 'كلمة المرور: 8+ أحرف وأرقام ورموز' });
   try {
     const hash = bcrypt.hashSync(password, 10);
-    const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase()) ? 1 : 0;
+    const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase().trim()) ? 1 : 0;
     const r = db.prepare('INSERT INTO accounts (email, phone, name, password_hash, is_admin) VALUES (?, ?, ?, ?, ?)')
       .run(email.toLowerCase(), phone, name.trim(), hash, isAdmin);
     const u = db.prepare('SELECT id, email, phone, name, is_admin FROM accounts WHERE id = ?').get(r.lastInsertRowid);
@@ -360,7 +403,7 @@ app.get('/api/public/data', (req, res) => {
   const stores = db.prepare('SELECT * FROM stores WHERE active = 1 ORDER BY sort_order').all();
   const wallets = db.prepare('SELECT * FROM wallets WHERE active = 1 ORDER BY sort_order').all();
   const testimonials = db.prepare('SELECT * FROM testimonials WHERE active = 1 ORDER BY sort_order, id DESC').all();
-  res.json({ content, pricing, countries, regions, stores, wallets, testimonials, status_labels: STATUS_LABELS, gemini_enabled: !!GEMINI_API_KEY });
+  res.json({ content, pricing, countries, regions, stores, wallets, testimonials, status_labels: STATUS_LABELS, gemini_enabled: !!GROQ_API_KEY });
 });
 
 app.post('/api/quote', (req, res) => {
@@ -753,6 +796,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   📦  وصلني — منصة الوساطة اللوجستية');
   console.log('   🌐  http://localhost:' + PORT);
   console.log('   👤  admin@gmail.com  /  Admin@123');
-  console.log('   🤖  Gemini: ' + (GEMINI_API_KEY ? '✅ مُفعّل' : '❌ غير مضبوط'));
+  console.log('   🤖  Groq: ' + (GROQ_API_KEY ? '✅ ' + GROQ_MODEL : '❌ غير مضبوط'));
   console.log('════════════════════════════════════════\n');
 });
