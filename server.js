@@ -9,15 +9,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'wasalni-dev-secret-change-me';
 const DB_PATH = process.env.DB_PATH || 'wasalni.db';
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
-const GROQ_MAX_RETRIES = parseInt(process.env.GROQ_MAX_RETRIES || '4');
-const GROQ_INITIAL_DELAY_MS = parseInt(process.env.GROQ_INITIAL_DELAY_MS || '1000');
-const SCRAPINGANT_API_KEY = process.env.SCRAPINGANT_API_KEY || '';
 const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'admin@gmail.com')
-  .split(',')
-  .map(e => e.trim().toLowerCase())
-  .filter(Boolean);
+  .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -54,16 +47,26 @@ CREATE TABLE IF NOT EXISTS orders (
   receiver_name TEXT NOT NULL, receiver_phone TEXT NOT NULL, full_address TEXT NOT NULL,
   store_name TEXT, product_title TEXT NOT NULL, product_url TEXT NOT NULL,
   product_image TEXT,
-  product_price_usd REAL NOT NULL, quantity INTEGER DEFAULT 1,
-  weight_kg REAL NOT NULL, shipping_method TEXT DEFAULT 'air',
-  selected_size TEXT, selected_color TEXT, customer_notes TEXT,
-  product_analysis TEXT,
-  shipping_cost_usd REAL NOT NULL, customs_usd REAL NOT NULL,
-  commission_usd REAL NOT NULL, delivery_fee_usd REAL NOT NULL,
-  total_usd REAL NOT NULL, admin_adjusted_usd REAL,
+  customer_description TEXT,
+  quantity INTEGER DEFAULT 1,
+  admin_quote_price REAL,
+  admin_quote_shipping REAL,
+  admin_quote_customs REAL,
+  admin_quote_notes TEXT,
+  quote_sent_at DATETIME,
+  quote_approved_at DATETIME,
+  product_price_usd REAL DEFAULT 0,
+  weight_kg REAL DEFAULT 1,
+  shipping_method TEXT DEFAULT 'air',
+  shipping_cost_usd REAL DEFAULT 0,
+  customs_usd REAL DEFAULT 0,
+  commission_usd REAL DEFAULT 0,
+  delivery_fee_usd REAL DEFAULT 0,
+  total_usd REAL DEFAULT 0,
+  admin_adjusted_usd REAL,
   admin_customs_usd REAL,
-  wallet_network TEXT, wallet_address TEXT, tx_ref TEXT, tx_proof_url TEXT,
-  status TEXT DEFAULT 'awaiting_payment', notes TEXT,
+  wallet_network TEXT, tx_ref TEXT, tx_proof_url TEXT,
+  status TEXT DEFAULT 'pending_quote', notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES accounts(id) ON DELETE CASCADE,
   FOREIGN KEY (country_id) REFERENCES countries(id),
@@ -75,9 +78,7 @@ CREATE TABLE IF NOT EXISTS order_tracking (
   note TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
 );
-CREATE TABLE IF NOT EXISTS pricing (
-  key TEXT PRIMARY KEY, value TEXT
-);
+CREATE TABLE IF NOT EXISTS pricing (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS wallets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   network TEXT NOT NULL, address TEXT NOT NULL,
@@ -90,9 +91,7 @@ CREATE TABLE IF NOT EXISTS testimonials (
   active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE IF NOT EXISTS content (
-  key TEXT PRIMARY KEY, value TEXT
-);
+CREATE TABLE IF NOT EXISTS content (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS support_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL, user_name TEXT,
@@ -109,14 +108,18 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 `);
 
-try { db.exec('ALTER TABLE orders ADD COLUMN admin_customs_usd REAL'); } catch (e) {}
-try { db.exec('ALTER TABLE orders ADD COLUMN product_image TEXT'); } catch (e) {}
-try { db.exec('ALTER TABLE orders ADD COLUMN selected_size TEXT'); } catch (e) {}
-try { db.exec('ALTER TABLE orders ADD COLUMN selected_color TEXT'); } catch (e) {}
-try { db.exec('ALTER TABLE orders ADD COLUMN customer_notes TEXT'); } catch (e) {}
-try { db.exec('ALTER TABLE orders ADD COLUMN product_analysis TEXT'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN customer_description TEXT'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN admin_quote_price REAL'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN admin_quote_shipping REAL'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN admin_quote_customs REAL'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN admin_quote_notes TEXT'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN quote_sent_at DATETIME'); } catch (e) {}
+try { db.exec('ALTER TABLE orders ADD COLUMN quote_approved_at DATETIME'); } catch (e) {}
 
 const STATUS_LABELS = {
+  pending_quote: '📩 طلب عرض سعر',
+  quote_sent: '💰 وصل عرض السعر — بانتظار موافقتك',
+  quote_rejected: '❌ رفضت عرض السعر',
   awaiting_payment: '⏳ بانتظار الدفع',
   payment_received: '💵 تم استلام الدفع',
   purchased: '🛍️ تم الشراء من المتجر',
@@ -134,16 +137,13 @@ function seed() {
   setP.run('per_kg_air', '5');
   setP.run('per_kg_sea', '2');
   setP.run('customs_percent', '5');
-  setP.run('commission_percent', '0');
-  setP.run('min_weight_kg', '1');
   setP.run('usdt_rate', '1');
-  setP.run('default_shipping_method', 'air');
 
   const setC = db.prepare('INSERT OR IGNORE INTO content (key, value) VALUES (?, ?)');
   setC.run('site_name', 'وصلني');
   setC.run('site_tagline', 'وسيطك للتسوق من أمازون والعالم — نوصلك إلى سوريا');
   setC.run('hero_title', '🛒 تسوّق من أي متجر عالمي... ونوصلك إلى سوريا');
-  setC.run('hero_subtitle', 'الصق رابط المنتج من أمازون أو علي إكسبريس أو إي باي — استخرج التفاصيل تلقائياً وادفع بالكريبتو.');
+  setC.run('hero_subtitle', 'الصق رابط المنتج، اكتب طلبك بالتفصيل، ونرسل لك السعر النهائي — دفع بالكريبتو وتوصيل إلى بابك.');
   setC.run('about_text', 'وصلني هي منصة وساطة تسوق ولوجستيات دولية، تتيح لأهلنا في سوريا الشراء من أكبر المتاجر العالمية (Amazon, AliExpress, eBay وغيرها) ودفع المبلغ بالكريبتو USDT، ثم تتبع شحنتهم مرحلة بمرحلة حتى الاستلام في سوريا.');
   setC.run('terms_text', 'باستخدامك للمنصة فإنك توافق على الشروط والأحكام: أنت مسؤول عن صحة المعلومات المدخلة، ومدة التسليم تتراوح بين 3 إلى 6 أسابيع حسب الوزن والدولة المصدرة وشركة الشحن.');
   setC.run('refund_text', 'نضمن لك استرجاع كامل المبلغ بالـ USDT في حال عدم وصول الشحنة خلال المدة القصوى المحددة (8 أسابيع)، أو في حال تلف المنتج أثناء الشحن.');
@@ -222,389 +222,6 @@ const RE_EMAIL = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i;
 const RE_PHONE = /^09\d{8}$/;
 const RE_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_\-+=\[\]{};:'",.<>\/?\\|`~]).{8,}$/;
 
-// ==================== جلب صفحة المنتج عبر ScrapingAnt ====================
-async function fetchProductPage(url) {
-  if (SCRAPINGANT_API_KEY) {
-    try {
-      let proxyCountry = 'US';
-      let browserMode = 'true';
-      if (url.includes('amazon.ae')) proxyCountry = 'AE';
-      else if (url.includes('amazon.sa')) proxyCountry = 'SA';
-      else if (url.includes('amazon.de')) proxyCountry = 'DE';
-      else if (url.includes('amazon.co.uk')) proxyCountry = 'GB';
-      else if (url.includes('amazon.fr')) proxyCountry = 'FR';
-      else if (url.includes('amazon.es')) proxyCountry = 'ES';
-      else if (url.includes('amazon.it')) proxyCountry = 'IT';
-      else if (url.includes('amazon.ca')) proxyCountry = 'CA';
-      else if (url.includes('aliexpress.')) proxyCountry = 'US';
-      else if (url.includes('ebay.')) proxyCountry = 'US';
-      else if (url.includes('walmart.')) proxyCountry = 'US';
-
-      const apiUrl = 'https://api.scrapingant.com/v2/general?' + new URLSearchParams({
-        url: url,
-        'x-api-key': SCRAPINGANT_API_KEY,
-        browser: browserMode,
-        'proxy_country': proxyCountry,
-        'block_resources': 'false',
-        'return_page_source': 'true'
-      }).toString();
-      console.log('🌐 ScrapingAnt → proxy:', proxyCountry, '| url:', url.slice(0, 80));
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 55000);
-      const resp = await fetch(apiUrl, { method: 'GET', signal: controller.signal });
-      clearTimeout(timeoutId);
-
-      if (resp.ok) {
-        const html = await resp.text();
-        console.log('✅ ScrapingAnt: ' + html.length + ' حرف');
-        global._lastFetchedHtml = html;
-        global._lastFetchedUrl = url;
-        global._lastFetchedAt = new Date().toISOString();
-        return html;
-      }
-      const errTxt = await resp.text();
-      console.log('⚠️ ScrapingAnt فشل (' + resp.status + '):', errTxt.slice(0, 250));
-    } catch (e) {
-      console.log('⚠️ ScrapingAnt خطأ:', e.message);
-    }
-  }
-
-  try {
-    console.log('🌐 محاولة جلب مباشر...');
-    const resp = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8'
-      },
-      redirect: 'follow'
-    });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const html = await resp.text();
-    console.log('✅ مباشر: ' + html.length + ' حرف');
-    global._lastFetchedHtml = html;
-    global._lastFetchedUrl = url;
-    return html;
-  } catch (e) {
-    console.log('⚠️ فشل الجلب المباشر:', e.message);
-    return null;
-  }
-}
-
-// ==================== استخراج بيانات الصفحة ====================
-function extractPageContent(html) {
-  if (!html) return null;
-
-  const lowerHtml = html.toLowerCase();
-
-  const blockSignals = ['captcha','robot check','are you a human',
-    'automated queries','unusual traffic','verify you are human',
-    'enter the characters you see below','cf-browser-verification','attention required'];
-  if (blockSignals.some(s => lowerHtml.includes(s))) {
-    console.log('🚫 الصفحة محجوبة');
-    return null;
-  }
-
-  const decodeEntities = (s) => s
-    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
-    .replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ')
-    .replace(/&#x27;/g,"'").replace(/&hellip;/g,'…').replace(/&#x2F;/g,'/');
-
-  const getMeta = (patterns) => {
-    for (const p of patterns) {
-      const m = html.match(p);
-      if (m && m[1]) return decodeEntities(m[1].trim());
-    }
-    return '';
-  };
-
-  let jsonProduct = null;
-  const ldMatches = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
-  if (ldMatches) {
-    for (const m of ldMatches) {
-      const inner = m.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '').trim();
-      try {
-        const parsed = JSON.parse(inner);
-        const items = Array.isArray(parsed) ? parsed : [parsed];
-        for (const it of items) {
-          if (it['@type'] === 'Product' || it['@type'] === 'ProductGroup' ||
-              (it.name && (it.offers || it.image))) {
-            jsonProduct = it;
-            break;
-          }
-        }
-        if (jsonProduct) break;
-      } catch (e) { }
-    }
-  }
-
-  let title = '';
-  let price = '';
-  let image = '';
-  let description = '';
-  let brand = '';
-
-  if (jsonProduct) {
-    title = jsonProduct.name || '';
-    description = (jsonProduct.description || '').slice(0, 800);
-    if (jsonProduct.image) {
-      image = Array.isArray(jsonProduct.image) ? jsonProduct.image[0] :
-              (typeof jsonProduct.image === 'string' ? jsonProduct.image : jsonProduct.image?.url || '');
-    }
-    if (jsonProduct.brand) {
-      brand = typeof jsonProduct.brand === 'string' ? jsonProduct.brand : (jsonProduct.brand.name || '');
-    }
-    const offers = jsonProduct.offers;
-    if (offers) {
-      const off = Array.isArray(offers) ? offers[0] : offers;
-      if (off && off.price) price = String(off.price);
-      else if (off && off.priceSpecification) price = String(off.priceSpecification.price || '');
-      else if (off && off.lowPrice) price = String(off.lowPrice);
-    }
-    console.log('✅ JSON-LD وجد:', title.slice(0, 60), '| السعر:', price);
-  }
-
-  if (!title) {
-    title = getMeta([
-      /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
-      /<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i
-    ]);
-  }
-  if (!description) {
-    description = getMeta([
-      /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i,
-      /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i,
-      /<meta[^>]+name=["']twitter:description["'][^>]+content=["']([^"']+)["']/i
-    ]).slice(0, 800);
-  }
-  if (!image) {
-    image = getMeta([
-      /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
-      /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i
-    ]);
-  }
-  if (!price) {
-    price = getMeta([
-      /<meta[^>]+property=["']product:price:amount["'][^>]+content=["']([^"']+)["']/i,
-      /<meta[^>]+property=["']og:price:amount["'][^>]+content=["']([^"']+)["']/i
-    ]);
-  }
-  if (!brand) {
-    brand = getMeta([
-      /<meta[^>]+property=["']product:brand["'][^>]+content=["']([^"']+)["']/i
-    ]);
-  }
-
-  if (!title) {
-    title = getMeta([
-      /<span[^>]+id=["']productTitle["'][^>]*>([^<]+)<\/span>/i,
-      /<h1[^>]+id=["']title["'][^>]*>[\s\S]*?<span[^>]*>([^<]+)<\/span>/i,
-      /<h1[^>]*>([^<]+)<\/h1>/i,
-      /<title[^>]*>([^<]+)<\/title>/i
-    ]);
-    title = title.replace(/^Amazon\.[a-z.]+[\s:|-]+/i, '')
-                 .replace(/[\s:|-]+Amazon\.[a-z.]+$/i, '')
-                 .replace(/^Amazon\.com[\s:|-]+/i, '')
-                 .replace(/\s*[-:|]\s*Amazon\.com\s*$/i, '')
-                 .replace(/\s*Buy\s+online\s*$/i, '')
-                 .trim();
-  }
-
-  if (!price) {
-    const priceMatch = html.match(/<span[^>]+class="[^"]*a-price-whole[^"]*"[^>]*>\s*([\d,]+)/i);
-    if (priceMatch) price = priceMatch[1].replace(/,/g, '');
-    else {
-      const dollarMatch = html.match(/\$\s*([\d,]+\.?\d*)/);
-      if (dollarMatch) price = dollarMatch[1].replace(/,/g, '');
-    }
-  }
-
-  const lowTitle = (title || '').toLowerCase().trim();
-  const badTitles = ['amazon','amazon.com','amazon.ae','amazon.sa','amazon.de','ebay','aliexpress',
-                     'walmart','robot','captcha','access denied',''];
-  if (!title || badTitles.includes(lowTitle) || title.length < 5) {
-    console.log('🚫 ما لقينا عنوان حقيقي. العنوان الحالي:', title);
-    return null;
-  }
-
-  let textContent = html
-    .replace(/<script[\s\S]*?<\/script>/gi,' ')
-    .replace(/<style[\s\S]*?<\/style>/gi,' ')
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi,' ')
-    .replace(/<[^>]+>/g,' ').replace(/&[a-z#0-9]+;/gi,' ')
-    .replace(/\s+/g,' ').trim().slice(0, 4000);
-
-  console.log('✅ استخراج نهائي: عنوان:', title.slice(0, 70), '| سعر:', price || '-');
-
-  return {
-    title: title,
-    description: description,
-    image: image,
-    price: price,
-    brand: brand,
-    text_sample: textContent
-  };
-}
-
-// ==================== تحليل الرابط عبر Groq ====================
-async function analyzeProductUrl(url) {
-  if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY غير مضبوط');
-  const endpoint = 'https://api.groq.com/openai/v1/chat/completions';
-
-  const html = await fetchProductPage(url);
-  const pageData = extractPageContent(html);
-
-  console.log('📄 حالة الاستخراج:', pageData ? '✅ نجح' : '❌ فشل');
-  if (pageData) {
-    console.log('   عنوان:', (pageData.title || '').slice(0, 100));
-    console.log('   سعر:', pageData.price || '(none)');
-    console.log('   صورة:', (pageData.image || '').slice(0, 80));
-  }
-
-  if (!pageData) {
-    return {
-      found: false,
-      product_title: '',
-      price_usd: 0,
-      image_url: '',
-      sizes: [],
-      colors: [],
-      weight_kg: 1,
-      store_name: '',
-      description: '',
-      confidence: 'low'
-    };
-  }
-
-  const pageContext = `
-Title: ${pageData.title || '(none)'}
-Description: ${pageData.description || '(none)'}
-Image URL: ${pageData.image || '(none)'}
-Price (raw): ${pageData.price || '(none)'}
-Brand: ${pageData.brand || '(none)'}
-Page text sample: ${pageData.text_sample || '(none)'}
-`;
-
-  const systemPrompt = `You are a product URL analyzer. Return ONLY valid JSON. No markdown, no explanation.
-
-Return this EXACT structure:
-{
-  "found": true or false,
-  "product_title": "clean product name (remove store name from title)",
-  "price_usd": number (0 if unknown),
-  "image_url": "direct image URL or empty",
-  "sizes": ["sizes if any, else empty"],
-  "colors": ["colors if any, else empty"],
-  "weight_kg": number (estimate by category),
-  "store_name": "store name",
-  "description": "short description",
-  "confidence": "high" | "medium" | "low"
-}
-
-Weight guidelines: Phone 0.5, Laptop 2.5, Watch 0.4, Book 0.6, Shoes 1.2,
-T-shirt 0.3, Camera 1.5, Kitchen 3, Toy 0.8 kg.
-
-CRITICAL RULES:
-- If the page content has NO real product info (just store name, no clear title/price), set "found": false.
-- product_title MUST be the actual product name — NOT the store name.
-- price_usd must be a number, not a string. Convert other currencies to USD.`;
-
-  const userPrompt = `URL: ${url}\n\n${pageContext}\n\nReturn JSON now.`;
-
-  const body = {
-    model: GROQ_MODEL,
-    messages: [
-      { role:'system', content: systemPrompt },
-      { role:'user', content: userPrompt }
-    ],
-    temperature: 0.1,
-    response_format: { type:'json_object' },
-    stream: false
-  };
-
-  let lastError = null;
-  for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt++) {
-    try {
-      const resp = await fetch(endpoint, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + GROQ_API_KEY },
-        body: JSON.stringify(body)
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const text = data.choices?.[0]?.message?.content || '{"found":false}';
-        let parsed;
-        try { parsed = JSON.parse(text); }
-        catch(e) {
-          const m = text.match(/\{[\s\S]*\}/);
-          parsed = m ? JSON.parse(m[0]) : { found:false };
-        }
-
-        console.log('🤖 رد Groq:', JSON.stringify(parsed).slice(0, 400));
-
-        let finalTitle = (parsed.product_title || '').trim();
-        const badTitles = ['amazon','amazon.com','amazon.ae','ebay','aliexpress','robot','captcha'];
-        if (finalTitle.length < 5 || badTitles.includes(finalTitle.toLowerCase())) {
-          finalTitle = pageData.title || '';
-        }
-
-        const found = !!parsed.found && finalTitle.length >= 5;
-
-        return {
-          found,
-          product_title: finalTitle,
-          price_usd: parseFloat(parsed.price_usd) || parseFloat(pageData.price) || 0,
-          image_url: parsed.image_url || pageData.image || '',
-          sizes: Array.isArray(parsed.sizes) ? parsed.sizes : [],
-          colors: Array.isArray(parsed.colors) ? parsed.colors : [],
-          weight_kg: parseFloat(parsed.weight_kg) || 1,
-          store_name: parsed.store_name || '',
-          description: parsed.description || pageData.description || '',
-          confidence: parsed.confidence || 'medium'
-        };
-      }
-      if ([429,500,502,503,504].includes(resp.status)) {
-        const txt = await resp.text();
-        lastError = new Error(`Groq API ${resp.status}: ${txt.slice(0,200)}`);
-        if (attempt < GROQ_MAX_RETRIES) {
-          const delay = GROQ_INITIAL_DELAY_MS * Math.pow(2, attempt);
-          await new Promise(r => setTimeout(r, delay + Math.floor(Math.random()*500)));
-          continue;
-        }
-        throw lastError;
-      }
-      const txt = await resp.text();
-      throw new Error(`Groq API error: ${txt.slice(0,300)}`);
-    } catch (e) {
-      if (e.message && e.message.includes('Groq API')) throw e;
-      lastError = e;
-      if (attempt < GROQ_MAX_RETRIES) {
-        const delay = GROQ_INITIAL_DELAY_MS * Math.pow(2, attempt);
-        await new Promise(r => setTimeout(r, delay + Math.floor(Math.random()*500)));
-        continue;
-      }
-      throw lastError;
-    }
-  }
-  throw lastError || new Error('فشل التحليل');
-}
-
-app.post('/api/analyze-url', auth, async (req, res) => {
-  const { url } = req.body;
-  if (!url || !/^https?:\/\/.+/i.test(url)) {
-    return res.status(400).json({ detail: 'رابط غير صالح — يجب أن يبدأ بـ http:// أو https://' });
-  }
-  if (!GROQ_API_KEY) {
-    return res.status(503).json({ detail: 'خدمة تحليل الروابط غير مفعّلة حالياً — يرجى إضافة GROQ_API_KEY' });
-  }
-  try {
-    const result = await analyzeProductUrl(url);
-    res.json({ success: true, ...result });
-  } catch (e) {
-    res.status(500).json({ detail: e.message || 'فشل تحليل الرابط' });
-  }
-});
-
 // ==================== المصادقة ====================
 app.post('/api/auth/register', (req, res) => {
   const { name, email, phone, password } = req.body;
@@ -650,45 +267,10 @@ app.get('/api/public/data', (req, res) => {
   const stores = db.prepare('SELECT * FROM stores WHERE active = 1 ORDER BY sort_order').all();
   const wallets = db.prepare('SELECT * FROM wallets WHERE active = 1 ORDER BY sort_order').all();
   const testimonials = db.prepare('SELECT * FROM testimonials WHERE active = 1 ORDER BY sort_order, id DESC').all();
-  res.json({ content, pricing, countries, regions, stores, wallets, testimonials, status_labels: STATUS_LABELS, gemini_enabled: !!GROQ_API_KEY });
+  res.json({ content, pricing, countries, regions, stores, wallets, testimonials, status_labels: STATUS_LABELS });
 });
 
-app.post('/api/quote', (req, res) => {
-  const { product_price_usd, quantity = 1, weight_kg, shipping_method = 'air', region_id } = req.body;
-  if (!product_price_usd || product_price_usd <= 0) return res.status(400).json({ detail: 'سعر المنتج مطلوب' });
-  if (!weight_kg || weight_kg <= 0) return res.status(400).json({ detail: 'الوزن مطلوب' });
-  if (!region_id) return res.status(400).json({ detail: 'المحافظة مطلوبة' });
-
-  const pricing = {};
-  db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
-  const region = db.prepare('SELECT * FROM regions WHERE id = ?').get(region_id);
-  if (!region) return res.status(400).json({ detail: 'المحافظة غير موجودة' });
-
-  const qty = Math.max(1, parseInt(quantity));
-  const rawWeight = parseFloat(weight_kg) * qty;
-  const roundedWeight = Math.ceil(rawWeight);
-  const perKg = shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
-  const shippingCost = roundedWeight * perKg;
-  const productCost = product_price_usd * qty;
-  const customs = productCost * (pricing.customs_percent / 100);
-  const total = productCost + shippingCost + customs;
-
-  res.json({
-    product_cost: +productCost.toFixed(2),
-    shipping_cost: +shippingCost.toFixed(2),
-    customs: +customs.toFixed(2),
-    commission: 0,
-    delivery_fee: 0,
-    total_usd: +total.toFixed(2),
-    total_usdt: +total.toFixed(2),
-    usdt_rate: 1,
-    raw_weight_kg: +rawWeight.toFixed(2),
-    rounded_weight_kg: roundedWeight,
-    total_weight_kg: roundedWeight,
-    per_kg_used: perKg
-  });
-});
-
+// ==================== الطلبات ====================
 function genOrderNumber() {
   const d = new Date();
   const ymd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
@@ -698,11 +280,9 @@ function genOrderNumber() {
 
 app.post('/api/orders', auth, (req, res) => {
   const {
-    country_id, region_id, receiver_name, receiver_phone, full_address,
-    store_name, product_title, product_url, product_image,
-    product_price_usd, quantity = 1, weight_kg,
-    selected_size, selected_color, customer_notes, product_analysis,
-    shipping_method = 'air', wallet_network, tx_ref, tx_proof_url
+    region_id, receiver_name, receiver_phone, full_address,
+    store_name, product_title, product_url, customer_description,
+    quantity = 1
   } = req.body;
 
   if (!receiver_name || receiver_name.trim().split(/\s+/).length < 3)
@@ -713,23 +293,13 @@ app.post('/api/orders', auth, (req, res) => {
     return res.status(400).json({ detail: 'العنوان الكامل مطلوب' });
   if (!product_title || !product_url)
     return res.status(400).json({ detail: 'عنوان المنتج ورابطه مطلوبان' });
-  if (!product_price_usd || !weight_kg)
-    return res.status(400).json({ detail: 'سعر المنتج والوزن مطلوبان' });
+  if (!customer_description || customer_description.trim().length < 5)
+    return res.status(400).json({ detail: 'اكتب وصف ما تريده بالتفصيل' });
   if (!region_id) return res.status(400).json({ detail: 'المحافظة مطلوبة' });
 
-  const pricing = {}; db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
   const region = db.prepare('SELECT * FROM regions WHERE id = ?').get(region_id);
   if (!region) return res.status(400).json({ detail: 'المحافظة غير موجودة' });
-  const country = db.prepare('SELECT * FROM countries WHERE id = ?').get(country_id || region.country_id);
-
-  const qty = Math.max(1, parseInt(quantity));
-  const rawWeight = parseFloat(weight_kg) * qty;
-  const roundedWeight = Math.ceil(rawWeight);
-  const productCost = product_price_usd * qty;
-  const perKg = shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
-  const shippingCost = roundedWeight * perKg;
-  const customs = productCost * (pricing.customs_percent / 100);
-  const total = productCost + shippingCost + customs;
+  const country = db.prepare('SELECT * FROM countries WHERE id = ?').get(region.country_id);
 
   const orderNumber = genOrderNumber();
   const userName = req.user.name || 'عميل';
@@ -737,29 +307,26 @@ app.post('/api/orders', auth, (req, res) => {
   const r = db.prepare(`INSERT INTO orders
     (order_number, user_id, user_name, country_id, region_id,
      receiver_name, receiver_phone, full_address,
-     store_name, product_title, product_url, product_image,
-     product_price_usd, quantity, weight_kg, shipping_method,
-     selected_size, selected_color, customer_notes, product_analysis,
+     store_name, product_title, product_url, customer_description, quantity,
+     product_price_usd, weight_kg, shipping_method,
      shipping_cost_usd, customs_usd, commission_usd, delivery_fee_usd, total_usd,
-     wallet_network, tx_ref, tx_proof_url, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+     status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(
       orderNumber, req.user.id, userName, country ? country.id : null, region.id,
       receiver_name.trim(), receiver_phone, full_address.trim(),
-      store_name || '', product_title.trim(), product_url.trim(), product_image || '',
-      product_price_usd, qty, rawWeight, shipping_method,
-      selected_size || '', selected_color || '', customer_notes || '', product_analysis || '',
-      +shippingCost.toFixed(2), +customs.toFixed(2), 0, 0, +total.toFixed(2),
-      wallet_network || '', tx_ref || '', tx_proof_url || '', 'awaiting_payment'
+      store_name || '', product_title.trim(), product_url.trim(),
+      customer_description.trim(), Math.max(1, parseInt(quantity)),
+      0, 1, 'air', 0, 0, 0, 0, 0, 'pending_quote'
     );
 
   const orderId = r.lastInsertRowid;
   db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
-    .run(orderId, 'awaiting_payment', 'تم إنشاء الطلب بنجاح — بانتظار الدفع بالـ USDT');
+    .run(orderId, 'pending_quote', 'استلمنا طلبك وسنرسل لك عرض السعر قريباً');
   db.prepare('INSERT INTO notifications (user_id, order_id, title, body) VALUES (?, ?, ?, ?)')
-    .run(req.user.id, orderId, 'تم إنشاء طلبك', `طلبك #${orderNumber} بانتظار تأكيد الدفع`);
+    .run(req.user.id, orderId, '📩 تم إنشاء طلبك', `طلبك #${orderNumber} — سنرسل لك السعر قريباً`);
 
-  res.json({ success: true, order_id: orderId, order_number: orderNumber, total_usd: +total.toFixed(2) });
+  res.json({ success: true, order_id: orderId, order_number: orderNumber });
 });
 
 app.get('/api/orders/mine', auth, (req, res) => {
@@ -784,6 +351,34 @@ app.get('/api/orders/:id', auth, (req, res) => {
   res.json(o);
 });
 
+app.post('/api/orders/:id/approve-quote', auth, (req, res) => {
+  const o = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
+  if (o.status !== 'quote_sent') return res.status(400).json({ detail: 'لا يوجد عرض سعر للموافقة' });
+
+  db.prepare(`UPDATE orders SET status = 'awaiting_payment',
+    quote_approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?`).run(o.id);
+
+  db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
+    .run(o.id, 'awaiting_payment', 'وافقت على عرض السعر — بانتظار الدفع');
+  db.prepare('INSERT INTO notifications (user_id, order_id, title, body) VALUES (?, ?, ?, ?)')
+    .run(o.user_id, o.id, '✅ وافقت على السعر', `الرجاء تحويل $${o.total_usd.toFixed(2)} USDT لإتمام الطلب`);
+
+  res.json({ success: true });
+});
+
+app.post('/api/orders/:id/reject-quote', auth, (req, res) => {
+  const o = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
+  if (o.status !== 'quote_sent') return res.status(400).json({ detail: 'لا يوجد عرض سعر' });
+
+  db.prepare(`UPDATE orders SET status = 'quote_rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(o.id);
+  db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
+    .run(o.id, 'quote_rejected', 'رفض الزبون عرض السعر');
+  res.json({ success: true });
+});
+
 app.post('/api/orders/:id/submit-payment', auth, (req, res) => {
   const { wallet_network, tx_ref, tx_proof_url } = req.body;
   const o = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
@@ -798,6 +393,7 @@ app.post('/api/orders/:id/submit-payment', auth, (req, res) => {
   res.json({ success: true });
 });
 
+// ==================== الإشعارات ====================
 app.get('/api/notifications', auth, (req, res) => {
   res.json(db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30').all(req.user.id));
 });
@@ -806,6 +402,7 @@ app.post('/api/notifications/read-all', auth, (req, res) => {
   res.json({ success: true });
 });
 
+// ==================== الدعم ====================
 app.post('/api/support', auth, (req, res) => {
   const { message } = req.body;
   if (!message || !message.trim()) return res.status(400).json({ detail: 'الرسالة مطلوبة' });
@@ -818,10 +415,12 @@ app.get('/api/support/mine', auth, (req, res) => {
   res.json(db.prepare('SELECT * FROM support_messages WHERE user_id = ? ORDER BY created_at ASC').all(req.user.id));
 });
 
+// ==================== الأدمن ====================
 app.get('/api/admin/stats', auth, adminOnly, (req, res) => {
   res.json({
     total_orders: db.prepare('SELECT COUNT(*) c FROM orders').get().c,
-    pending_orders: db.prepare("SELECT COUNT(*) c FROM orders WHERE status = 'awaiting_payment'").get().c,
+    pending_quote: db.prepare("SELECT COUNT(*) c FROM orders WHERE status = 'pending_quote'").get().c,
+    awaiting_payment: db.prepare("SELECT COUNT(*) c FROM orders WHERE status = 'awaiting_payment'").get().c,
     in_progress: db.prepare("SELECT COUNT(*) c FROM orders WHERE status IN ('payment_received','purchased','warehouse_foreign','international_shipping','arrived_syria','out_for_delivery')").get().c,
     delivered: db.prepare("SELECT COUNT(*) c FROM orders WHERE status = 'delivered'").get().c,
     open_support: db.prepare("SELECT COUNT(*) c FROM support_messages WHERE status = 'open'").get().c,
@@ -831,35 +430,49 @@ app.get('/api/admin/stats', auth, adminOnly, (req, res) => {
 });
 
 app.get('/api/admin/orders', auth, adminOnly, (req, res) => {
-  const orders = db.prepare(`SELECT o.*, r.name_ar as region_name FROM orders o
-    LEFT JOIN regions r ON o.region_id = r.id ORDER BY o.created_at DESC`).all();
+  const orders = db.prepare(`SELECT o.*, r.name_ar as region_name, u.email as user_email, u.phone as user_phone
+    FROM orders o
+    LEFT JOIN regions r ON o.region_id = r.id
+    LEFT JOIN accounts u ON o.user_id = u.id
+    ORDER BY o.created_at DESC`).all();
   orders.forEach(o => { o.tracking = db.prepare('SELECT * FROM order_tracking WHERE order_id = ? ORDER BY created_at ASC').all(o.id); });
   res.json(orders);
 });
 
+app.post('/api/admin/orders/:id/send-quote', auth, adminOnly, (req, res) => {
+  const { amazon_price, shipping_cost, customs, notes } = req.body;
+  const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+  if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
+
+  const ap = parseFloat(amazon_price) || 0;
+  const sc = parseFloat(shipping_cost) || 0;
+  const cu = parseFloat(customs) || 0;
+  const total = ap + sc + cu;
+
+  db.prepare(`UPDATE orders SET
+    admin_quote_price = ?, admin_quote_shipping = ?, admin_quote_customs = ?,
+    admin_quote_notes = ?, total_usd = ?, status = 'quote_sent',
+    quote_sent_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?`).run(ap, sc, cu, notes || '', +total.toFixed(2), req.params.id);
+
+  db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
+    .run(o.id, 'quote_sent', `تم إرسال عرض السعر: $${total.toFixed(2)}`);
+  db.prepare('INSERT INTO notifications (user_id, order_id, title, body) VALUES (?, ?, ?, ?)')
+    .run(o.user_id, o.id, '💰 وصل عرض السعر', `طلبك #${o.order_number}: الإجمالي $${total.toFixed(2)} USDT`);
+
+  res.json({ success: true, total });
+});
+
 app.put('/api/admin/orders/:id', auth, adminOnly, (req, res) => {
-  const { status, admin_adjusted_usd, admin_customs_usd, notes, tracking_note } = req.body;
+  const { status, notes, tracking_note } = req.body;
   const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
   if (status && !STATUS_LABELS[status]) return res.status(400).json({ detail: 'حالة غير صحيحة' });
 
-  const newAdjusted = admin_adjusted_usd !== undefined ? admin_adjusted_usd : o.admin_adjusted_usd;
-  const newCustoms = admin_customs_usd !== undefined ? admin_customs_usd : o.admin_customs_usd;
   const newNotes = notes !== undefined ? notes : o.notes;
 
-  let newTotal = o.total_usd;
-  if (admin_customs_usd !== undefined && admin_customs_usd !== null) {
-    const productCost = o.product_price_usd * o.quantity;
-    const roundedWeight = Math.ceil(o.weight_kg);
-    const pricing = {};
-    db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
-    const perKg = o.shipping_method === 'sea' ? pricing.per_kg_sea : pricing.per_kg_air;
-    const shippingCost = roundedWeight * perKg;
-    newTotal = productCost + shippingCost + parseFloat(admin_customs_usd);
-  }
-
-  db.prepare(`UPDATE orders SET status = COALESCE(?, status), admin_adjusted_usd = ?, admin_customs_usd = ?, total_usd = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-    .run(status || null, newAdjusted, newCustoms, +newTotal.toFixed(2), newNotes, req.params.id);
+  db.prepare(`UPDATE orders SET status = COALESCE(?, status), notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+    .run(status || null, newNotes, req.params.id);
 
   if (status && status !== o.status) {
     db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
@@ -873,17 +486,6 @@ app.put('/api/admin/orders/:id', auth, adminOnly, (req, res) => {
 
 app.delete('/api/admin/orders/:id', auth, adminOnly, (req, res) => {
   db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
-});
-
-app.get('/api/admin/pricing', auth, adminOnly, (req, res) => {
-  const rows = db.prepare('SELECT * FROM pricing').all();
-  const obj = {}; rows.forEach(r => obj[r.key] = r.value);
-  res.json(obj);
-});
-app.put('/api/admin/pricing', auth, adminOnly, (req, res) => {
-  const upsert = db.prepare('INSERT OR REPLACE INTO pricing (key, value) VALUES (?, ?)');
-  Object.keys(req.body).forEach(k => upsert.run(k, String(req.body[k])));
   res.json({ success: true });
 });
 
@@ -1036,20 +638,6 @@ app.post('/api/admin/broadcast', auth, adminOnly, (req, res) => {
   res.json({ success: true, count: users.length });
 });
 
-// ==================== تشخيص ====================
-app.get('/api/admin/debug-last-html', auth, adminOnly, (req, res) => {
-  const h = global._lastFetchedHtml || '';
-  res.json({
-    url: global._lastFetchedUrl || '(none)',
-    fetched_at: global._lastFetchedAt || '(none)',
-    html_length: h.length,
-    html_preview: h.slice(0, 3000),
-    has_json_ld: /application\/ld\+json/i.test(h),
-    has_og_title: /og:title/i.test(h),
-    has_captcha: /captcha|robot check|are you a human/i.test(h)
-  });
-});
-
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.listen(PORT, '0.0.0.0', () => {
@@ -1057,7 +645,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('   📦  وصلني — منصة الوساطة اللوجستية');
   console.log('   🌐  http://localhost:' + PORT);
   console.log('   👤  admin@gmail.com  /  Admin@123');
-  console.log('   🤖  Groq: ' + (GROQ_API_KEY ? '✅ ' + GROQ_MODEL : '❌ غير مضبوط'));
-  console.log('   🕸️  ScrapingAnt: ' + (SCRAPINGANT_API_KEY ? '✅ مُفعّل' : '❌ غير مضبوط'));
   console.log('════════════════════════════════════════\n');
 });
