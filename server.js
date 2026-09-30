@@ -224,16 +224,31 @@ const RE_PASSWORD = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[!@#$%^&*()_\-+=\[\]{};:'",.<>\
 
 // ==================== جلب صفحة المنتج عبر ScrapingAnt ====================
 async function fetchProductPage(url) {
-  // الطريقة 1: عبر ScrapingAnt (مع IP سكني + متصفح كامل)
   if (SCRAPINGANT_API_KEY) {
     try {
+      let proxyCountry = 'US';
+      let browserMode = 'true';
+      if (url.includes('amazon.ae')) proxyCountry = 'AE';
+      else if (url.includes('amazon.sa')) proxyCountry = 'SA';
+      else if (url.includes('amazon.de')) proxyCountry = 'DE';
+      else if (url.includes('amazon.co.uk')) proxyCountry = 'GB';
+      else if (url.includes('amazon.fr')) proxyCountry = 'FR';
+      else if (url.includes('amazon.es')) proxyCountry = 'ES';
+      else if (url.includes('amazon.it')) proxyCountry = 'IT';
+      else if (url.includes('amazon.ca')) proxyCountry = 'CA';
+      else if (url.includes('aliexpress.')) proxyCountry = 'US';
+      else if (url.includes('ebay.')) proxyCountry = 'US';
+      else if (url.includes('walmart.')) proxyCountry = 'US';
+
       const apiUrl = 'https://api.scrapingant.com/v2/general?' + new URLSearchParams({
         url: url,
         'x-api-key': SCRAPINGANT_API_KEY,
-        browser: 'true',
-        'proxy_country': 'US'
+        browser: browserMode,
+        'proxy_country': proxyCountry,
+        'block_resources': 'false',
+        'return_page_source': 'true'
       }).toString();
-      console.log('🌐 جلب عبر ScrapingAnt...');
+      console.log('🌐 ScrapingAnt → proxy:', proxyCountry, '| url:', url.slice(0, 80));
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 55000);
       const resp = await fetch(apiUrl, { method: 'GET', signal: controller.signal });
@@ -241,33 +256,34 @@ async function fetchProductPage(url) {
 
       if (resp.ok) {
         const html = await resp.text();
-        console.log('✅ ScrapingAnt نجح: ' + html.length + ' حرف');
+        console.log('✅ ScrapingAnt: ' + html.length + ' حرف');
+        global._lastFetchedHtml = html;
+        global._lastFetchedUrl = url;
+        global._lastFetchedAt = new Date().toISOString();
         return html;
       }
       const errTxt = await resp.text();
-      console.log('⚠️ ScrapingAnt فشل (' + resp.status + '):', errTxt.slice(0, 200));
+      console.log('⚠️ ScrapingAnt فشل (' + resp.status + '):', errTxt.slice(0, 250));
     } catch (e) {
       console.log('⚠️ ScrapingAnt خطأ:', e.message);
     }
-  } else {
-    console.log('⚠️ SCRAPINGANT_API_KEY غير مضبوط — تجاوز الوصول المباشر');
   }
 
-  // الطريقة 2: محاولة مباشرة (احتياطي)
   try {
-    console.log('🌐 محاولة جلب مباشر (احتياطي)...');
+    console.log('🌐 محاولة جلب مباشر...');
     const resp = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
-        'Cache-Control': 'no-cache'
+        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8'
       },
       redirect: 'follow'
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const html = await resp.text();
     console.log('✅ مباشر: ' + html.length + ' حرف');
+    global._lastFetchedHtml = html;
+    global._lastFetchedUrl = url;
     return html;
   } catch (e) {
     console.log('⚠️ فشل الجلب المباشر:', e.message);
@@ -280,62 +296,136 @@ function extractPageContent(html) {
   if (!html) return null;
 
   const lowerHtml = html.toLowerCase();
-  const blockSignals = ['captcha','robot check','are you a human','access denied',
+
+  const blockSignals = ['captcha','robot check','are you a human',
     'automated queries','unusual traffic','verify you are human',
-    'cf-browser-verification','just a moment','attention required'];
+    'enter the characters you see below','cf-browser-verification','attention required'];
   if (blockSignals.some(s => lowerHtml.includes(s))) {
-    console.log('🚫 الصفحة محجوبة (captcha/block)');
-    return null;
-  }
-  if (html.length < 5000) {
-    console.log('⚠️ الصفحة قصيرة جداً:', html.length);
+    console.log('🚫 الصفحة محجوبة');
     return null;
   }
 
-  const getMeta = (patterns) => {
-    for (const p of patterns) {
-      const m = html.match(p);
-      if (m && m[1]) return m[1].trim();
-    }
-    return '';
-  };
   const decodeEntities = (s) => s
     .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
     .replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g,' ')
     .replace(/&#x27;/g,"'").replace(/&hellip;/g,'…').replace(/&#x2F;/g,'/');
 
-  const ogTitle = getMeta([
-    /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i,
-    /<title[^>]*>([^<]+)<\/title>/i
-  ]);
+  const getMeta = (patterns) => {
+    for (const p of patterns) {
+      const m = html.match(p);
+      if (m && m[1]) return decodeEntities(m[1].trim());
+    }
+    return '';
+  };
 
-  const lowTitle = ogTitle.toLowerCase().trim();
-  if (!ogTitle || lowTitle === 'amazon' || lowTitle === 'amazon.com' ||
-      lowTitle === 'amazon.ae' || lowTitle === 'ebay' || lowTitle === 'aliexpress') {
-    console.log('🚫 الصفحة ما فيها منتج حقيقي (العنوان عام):', ogTitle);
-    return null;
+  let jsonProduct = null;
+  const ldMatches = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi);
+  if (ldMatches) {
+    for (const m of ldMatches) {
+      const inner = m.replace(/<script[^>]*>/i, '').replace(/<\/script>/i, '').trim();
+      try {
+        const parsed = JSON.parse(inner);
+        const items = Array.isArray(parsed) ? parsed : [parsed];
+        for (const it of items) {
+          if (it['@type'] === 'Product' || it['@type'] === 'ProductGroup' ||
+              (it.name && (it.offers || it.image))) {
+            jsonProduct = it;
+            break;
+          }
+        }
+        if (jsonProduct) break;
+      } catch (e) { }
+    }
   }
 
-  const ogDesc = getMeta([
-    /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+name=["']twitter:description["'][^>]+content=["']([^"']+)["']/i
-  ]);
-  const ogImage = getMeta([
-    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i
-  ]);
-  const ogPrice = getMeta([
-    /<meta[^>]+property=["']product:price:amount["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+property=["']og:price:amount["'][^>]+content=["']([^"']+)["']/i,
-    /"price"\s*:\s*"?([\d.]+)"?/i,
-    /"priceAmount"\s*:\s*"?([\d.]+)"?/i
-  ]);
-  const ogBrand = getMeta([
-    /<meta[^>]+property=["']product:brand["'][^>]+content=["']([^"']+)["']/i,
-    /"brand"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"/i
-  ]);
+  let title = '';
+  let price = '';
+  let image = '';
+  let description = '';
+  let brand = '';
+
+  if (jsonProduct) {
+    title = jsonProduct.name || '';
+    description = (jsonProduct.description || '').slice(0, 800);
+    if (jsonProduct.image) {
+      image = Array.isArray(jsonProduct.image) ? jsonProduct.image[0] :
+              (typeof jsonProduct.image === 'string' ? jsonProduct.image : jsonProduct.image?.url || '');
+    }
+    if (jsonProduct.brand) {
+      brand = typeof jsonProduct.brand === 'string' ? jsonProduct.brand : (jsonProduct.brand.name || '');
+    }
+    const offers = jsonProduct.offers;
+    if (offers) {
+      const off = Array.isArray(offers) ? offers[0] : offers;
+      if (off && off.price) price = String(off.price);
+      else if (off && off.priceSpecification) price = String(off.priceSpecification.price || '');
+      else if (off && off.lowPrice) price = String(off.lowPrice);
+    }
+    console.log('✅ JSON-LD وجد:', title.slice(0, 60), '| السعر:', price);
+  }
+
+  if (!title) {
+    title = getMeta([
+      /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i
+    ]);
+  }
+  if (!description) {
+    description = getMeta([
+      /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+name=["']twitter:description["'][^>]+content=["']([^"']+)["']/i
+    ]).slice(0, 800);
+  }
+  if (!image) {
+    image = getMeta([
+      /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i
+    ]);
+  }
+  if (!price) {
+    price = getMeta([
+      /<meta[^>]+property=["']product:price:amount["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+property=["']og:price:amount["'][^>]+content=["']([^"']+)["']/i
+    ]);
+  }
+  if (!brand) {
+    brand = getMeta([
+      /<meta[^>]+property=["']product:brand["'][^>]+content=["']([^"']+)["']/i
+    ]);
+  }
+
+  if (!title) {
+    title = getMeta([
+      /<span[^>]+id=["']productTitle["'][^>]*>([^<]+)<\/span>/i,
+      /<h1[^>]+id=["']title["'][^>]*>[\s\S]*?<span[^>]*>([^<]+)<\/span>/i,
+      /<h1[^>]*>([^<]+)<\/h1>/i,
+      /<title[^>]*>([^<]+)<\/title>/i
+    ]);
+    title = title.replace(/^Amazon\.[a-z.]+[\s:|-]+/i, '')
+                 .replace(/[\s:|-]+Amazon\.[a-z.]+$/i, '')
+                 .replace(/^Amazon\.com[\s:|-]+/i, '')
+                 .replace(/\s*[-:|]\s*Amazon\.com\s*$/i, '')
+                 .replace(/\s*Buy\s+online\s*$/i, '')
+                 .trim();
+  }
+
+  if (!price) {
+    const priceMatch = html.match(/<span[^>]+class="[^"]*a-price-whole[^"]*"[^>]*>\s*([\d,]+)/i);
+    if (priceMatch) price = priceMatch[1].replace(/,/g, '');
+    else {
+      const dollarMatch = html.match(/\$\s*([\d,]+\.?\d*)/);
+      if (dollarMatch) price = dollarMatch[1].replace(/,/g, '');
+    }
+  }
+
+  const lowTitle = (title || '').toLowerCase().trim();
+  const badTitles = ['amazon','amazon.com','amazon.ae','amazon.sa','amazon.de','ebay','aliexpress',
+                     'walmart','robot','captcha','access denied',''];
+  if (!title || badTitles.includes(lowTitle) || title.length < 5) {
+    console.log('🚫 ما لقينا عنوان حقيقي. العنوان الحالي:', title);
+    return null;
+  }
 
   let textContent = html
     .replace(/<script[\s\S]*?<\/script>/gi,' ')
@@ -344,12 +434,14 @@ function extractPageContent(html) {
     .replace(/<[^>]+>/g,' ').replace(/&[a-z#0-9]+;/gi,' ')
     .replace(/\s+/g,' ').trim().slice(0, 4000);
 
+  console.log('✅ استخراج نهائي: عنوان:', title.slice(0, 70), '| سعر:', price || '-');
+
   return {
-    title: decodeEntities(ogTitle),
-    description: decodeEntities(ogDesc).slice(0, 800),
-    image: ogImage,
-    price: ogPrice.replace(/,/g,''),
-    brand: decodeEntities(ogBrand),
+    title: title,
+    description: description,
+    image: image,
+    price: price,
+    brand: brand,
     text_sample: textContent
   };
 }
@@ -942,6 +1034,20 @@ app.post('/api/admin/broadcast', auth, adminOnly, (req, res) => {
   const ins = db.prepare('INSERT INTO notifications (user_id, title, body) VALUES (?, ?, ?)');
   users.forEach(u => ins.run(u.id, title, body || ''));
   res.json({ success: true, count: users.length });
+});
+
+// ==================== تشخيص ====================
+app.get('/api/admin/debug-last-html', auth, adminOnly, (req, res) => {
+  const h = global._lastFetchedHtml || '';
+  res.json({
+    url: global._lastFetchedUrl || '(none)',
+    fetched_at: global._lastFetchedAt || '(none)',
+    html_length: h.length,
+    html_preview: h.slice(0, 3000),
+    has_json_ld: /application\/ld\+json/i.test(h),
+    has_og_title: /og:title/i.test(h),
+    has_captcha: /captcha|robot check|are you a human/i.test(h)
+  });
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
