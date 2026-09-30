@@ -33,7 +33,6 @@ function esc(str) {
   return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function fmt(n) { return Number(n || 0).toFixed(2); }
-function fmtInt(n) { return Number(n || 0).toLocaleString('ar-EG'); }
 
 // ==================== الشعارات ====================
 function flagSVG(size = '') {
@@ -111,7 +110,7 @@ function renderFooter() {
     <p style="margin-top:20px">© ${new Date().getFullYear()} ${esc(c.site_name || 'وصلني')} — جميع الحقوق محفوظة</p>`;
 }
 
-// ==================== تحميل المستخدم والإشعارات ====================
+// ==================== تحميل المستخدم ====================
 async function loadMe() {
   if (!state.token) { state.user = null; return; }
   try {
@@ -146,19 +145,19 @@ async function renderHome() {
     <div class="hero">
       <div class="hero-inner">
         <h1>${esc(c.hero_title || '🛒 تسوّق من أي متجر عالمي... ونوصلك إلى سوريا')}</h1>
-        <p>${esc(c.hero_subtitle || 'الصق رابط المنتج من أمازون أو علي إكسبريس أو إي باي — استخرج التفاصيل تلقائياً وادفع بالكريبتو.')}</p>
+        <p>${esc(c.hero_subtitle || 'الصق رابط المنتج، اكتب طلبك بالتفصيل، ونرسل لك السعر النهائي — دفع بالكريبتو وتوصيل إلى بابك.')}</p>
         <div class="hero-btns">
           <button class="cta" onclick="navigate('/new-order')">📦 اطلب الآن</button>
-          <button class="cta-sec" onclick="document.getElementById('calculator').scrollIntoView({behavior:'smooth'})">🧮 احسب السعر</button>
+          <button class="cta-sec" onclick="navigate('/help')">💬 كيف يعمل؟</button>
         </div>
       </div>
     </div>
 
     <div class="features">
-      <div class="feat"><div class="ic">🤖</div><h4>تحليل ذكي</h4><p>الصق الرابط واستخرج التفاصيل تلقائياً</p></div>
-      <div class="feat"><div class="ic">🧮</div><h4>حاسبة شفافة</h4><p>سعر نهائي واضح بدون مفاجآت</p></div>
+      <div class="feat"><div class="ic">📋</div><h4>اطلب بسهولة</h4><p>الصق الرابط واكتب طلبك</p></div>
+      <div class="feat"><div class="ic">💰</div><h4>سعر واضح</h4><p>نرسل لك تفصيل كامل قبل الدفع</p></div>
       <div class="feat"><div class="ic">💳</div><h4>دفع USDT</h4><p>سريع وآمن — TRC20 / BEP20</p></div>
-      <div class="feat"><div class="ic">🚚</div><h4>تتبع مباشر</h4><p>8 مراحل من الشراء حتى التسليم</p></div>
+      <div class="feat"><div class="ic">🚚</div><h4>تتبع مباشر</h4><p>10 مراحل من الطلب حتى التسليم</p></div>
       <div class="feat"><div class="ic">🛡️</div><h4>ضمان استرجاع</h4><p>استرجاع كامل بالـ USDT عند التأخر</p></div>
     </div>
 
@@ -172,46 +171,24 @@ async function renderHome() {
         </div>`).join('')}
     </div>
 
-    <div class="sec-title" id="calculator"><h2>🧮 حاسبة السعر الذكية</h2></div>
-    <div class="calc-card">
-      <div class="calc-section">
-        <h3><span class="num">1</span> تفاصيل المنتج</h3>
-        <div class="calc-grid">
-          <div>
-            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">سعر المنتج (USD)</label>
-            <input type="number" id="q_price" placeholder="199.99" min="0" step="0.01" oninput="calcQuote()">
-          </div>
-          <div>
-            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">الكمية</label>
-            <input type="number" id="q_qty" value="1" min="1" max="99" oninput="calcQuote()">
-          </div>
-          <div>
-            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">الوزن التقريبي (كغ)</label>
-            <input type="number" id="q_weight" placeholder="1.5" min="0.1" step="0.1" oninput="calcQuote()">
-          </div>
-          <div>
-            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">المحافظة</label>
-            <select id="q_region" onchange="calcQuote()">
-              <option value="">-- اختر المحافظة --</option>
-              ${(state.settings.regions || []).map(r => `<option value="${r.id}">${esc(r.name_ar)}</option>`).join('')}
-            </select>
-          </div>
-        </div>
+    <div class="sec-title"><h2>🎯 كيف يعمل؟</h2></div>
+    <div class="policy-grid">
+      <div class="policy-card">
+        <h4>1️⃣ اطلب</h4>
+        <p>الصق رابط المنتج من أمازون أو أي متجر عالمي، واكتب لنا كل تفاصيل ما تريده (اللون، الحجم، المواصفات).</p>
       </div>
-      <div class="calc-section">
-        <h3><span class="num">2</span> طريقة الشحن</h3>
-        <div class="radio-group">
-          <div class="radio-btn">
-            <input type="radio" name="ship" id="ship_air" value="air" checked onchange="calcQuote()">
-            <label for="ship_air">✈️ جوي<span class="sub">$5/كغ — 3 إلى 4 أسابيع</span></label>
-          </div>
-          <div class="radio-btn">
-            <input type="radio" name="ship" id="ship_sea" value="sea" onchange="calcQuote()">
-            <label for="ship_sea">🚢 بحري<span class="sub">$2/كغ — 5 إلى 6 أسابيع</span></label>
-          </div>
-        </div>
+      <div class="policy-card">
+        <h4>2️⃣ نراجع</h4>
+        <p>نتحقق من المنتج ونحضّر عرض سعر مفصل: سعر المنتج + الشحن + الجمارك.</p>
       </div>
-      <div id="calcResult"></div>
+      <div class="policy-card">
+        <h4>3️⃣ توافق وتدفع</h4>
+        <p>يوصلك عرض السعر، توافق عليه وتدفع بالـ USDT، ثم نبدأ التنفيذ.</p>
+      </div>
+      <div class="policy-card green">
+        <h4>4️⃣ تتبّع واستلم</h4>
+        <p>نتابع معك كل مرحلة من الشراء حتى التسليم في محافظتك.</p>
+      </div>
     </div>
 
     ${testimonials.length ? `
@@ -240,7 +217,7 @@ async function renderHome() {
       </div>
       <div class="policy-card">
         <h4>📜 الشروط والأحكام</h4>
-        <p>${esc(c.terms_text || 'باستخدامك للمنصة فإنك توافق على الشروط والأحكام: أنت مسؤول عن صحة المعلومات المدخلة، ومدة التسليم تتراوح بين 3 إلى 6 أسابيع حسب الوزن والدولة المصدرة وشركة الشحن.')}</p>
+        <p>${esc(c.terms_text || 'باستخدامك للمنصة فإنك توافق على الشروط والأحكام: أنت مسؤول عن صحة المعلومات المدخلة، ومدة التسليم تتراوح بين 3 إلى 6 أسابيع حسب الوزن والدولة المصدرة.')}</p>
       </div>
       <div class="policy-card">
         <h4>🎯 من نحن</h4>
@@ -253,73 +230,25 @@ async function renderHome() {
       ${c.whatsapp_number ? `<a href="https://wa.me/${c.whatsapp_number.replace(/[^0-9]/g,'')}" target="_blank" style="text-decoration:none">
         <div class="policy-card">
           <h4>📱 واتساب</h4>
-          <p>تواصل مباشر مع فريق الدعم عبر واتساب الأعمال: ${esc(c.whatsapp_number)}</p>
+          <p>تواصل مباشر: ${esc(c.whatsapp_number)}</p>
         </div>
       </a>` : ''}
       ${c.telegram_channel ? `<a href="https://t.me/${c.telegram_channel}" target="_blank" style="text-decoration:none">
         <div class="policy-card">
-          <h4>✈️ قناة تلغرام</h4>
-          <p>انضم لقناتنا الرسمية على تلغرام: @${esc(c.telegram_channel)}</p>
+          <h4>✈️ تلغرام</h4>
+          <p>@${esc(c.telegram_channel)}</p>
         </div>
       </a>` : ''}
     </div>
   `;
-  calcQuote();
 }
-
-// ==================== حاسبة السعر ====================
-async function calcQuote() {
-  const price = parseFloat(document.getElementById('q_price').value);
-  const qty = parseInt(document.getElementById('q_qty').value) || 1;
-  const weight = parseFloat(document.getElementById('q_weight').value);
-  const regionId = document.getElementById('q_region').value;
-  const method = document.querySelector('input[name="ship"]:checked')?.value || 'air';
-  const box = document.getElementById('calcResult');
-
-  if (!price || !weight || !regionId) {
-    box.innerHTML = `<div class="warn" style="background:#E0F2FE;border-color:#38BDF8;border-right-color:#0284C7;color:#075985">💡 املأ سعر المنتج والوزن واختر المحافظة لعرض السعر النهائي.</div>`;
-    return;
-  }
-  try {
-    const q = await api('/api/quote', 'POST', {
-      product_price_usd: price, quantity: qty, weight_kg: weight,
-      shipping_method: method, region_id: parseInt(regionId)
-    });
-    box.innerHTML = `
-      <div class="calc-result">
-        <h3>💰 السعر النهائي التقديري</h3>
-        <div class="calc-line"><span>سعر المنتج × ${qty}</span><span class="v">$${fmt(q.product_cost)}</span></div>
-        <div class="calc-line">
-          <span>الشحن (${q.rounded_weight_kg} كغ مجبور × $${q.per_kg_used}/كغ)</span>
-          <span class="v">$${fmt(q.shipping_cost)}</span>
-        </div>
-        <div class="calc-line"><span>الجمارك والخدمة (5%)</span><span class="v">$${fmt(q.customs)}</span></div>
-        <div class="calc-line"><span>التوصيل داخل سوريا</span><span class="v" style="color:#10B981">مجاني 🎉</span></div>
-        <div class="calc-line total">
-          <span>الإجمالي بالـ USDT</span>
-          <span>${fmt(q.total_usdt)} USDT</span>
-        </div>
-        <p style="font-size:12px;color:#94A3B8;margin-top:14px;line-height:1.6">📏 ملاحظة: الوزن مجبور لأعلى عدد صحيح (مثال: 1.1 كغ → 2 كغ).</p>
-        <button class="btn-primary" style="width:100%;padding:14px;font-size:15px;margin-top:14px;background:#F59E0B;border-color:#F59E0B;color:#0F172A;font-weight:800" onclick="goToOrder(${price},${qty},${weight},${regionId},'${method}')">
-          📦 متابعة الطلب بهذه التفاصيل
-        </button>
-      </div>`;
-  } catch (e) { box.innerHTML = `<div class="warn">${esc(e.message)}</div>`; }
-}
-window.calcQuote = calcQuote;
-
-function goToOrder(price, qty, weight, regionId, method) {
-  sessionStorage.setItem('prefill_order', JSON.stringify({ price, qty, weight, regionId, method }));
-  navigate('/new-order');
-}
-window.goToOrder = goToOrder;
 
 // ==================== صفحة إثباتات التسليم ====================
 async function renderTestimonials() {
   const list = state.settings.testimonials || [];
   document.getElementById('app').innerHTML = `
     <div class="sec-title"><h2>⭐ إثباتات التسليم وتقييمات العملاء</h2></div>
-    <p style="color:#64748B;margin-bottom:20px">شهادات حقيقية من عملاء استلموا شحناتهم عبر ${esc(state.settings.content?.site_name || 'وصلني')} في مختلف المحافظات السورية.</p>
+    <p style="color:#64748B;margin-bottom:20px">شهادات حقيقية من عملاء استلموا شحناتهم عبر ${esc(state.settings.content?.site_name || 'وصلني')}.</p>
     ${list.length === 0
       ? '<div class="empty"><div class="ic">📸</div><h3>لا توجد إثباتات منشورة بعد</h3></div>'
       : `<div class="testi-grid">
@@ -355,14 +284,14 @@ async function renderHelp() {
       </a>` : ''}
       ${tg ? `<a href="https://t.me/${tg}" target="_blank" style="text-decoration:none">
         <div class="policy-card">
-          <h4>✈️ قناة تلغرام الرسمية</h4>
-          <p>تابع آخر التحديثات والعروض: @${esc(tg)}</p>
+          <h4>✈️ قناة تلغرام</h4>
+          <p>تابع آخر التحديثات: @${esc(tg)}</p>
           <p style="margin-top:12px;color:#F59E0B;font-weight:700">انضم للقناة ←</p>
         </div>
       </a>` : ''}
       <div class="policy-card" onclick="state.user ? navigate('/support') : navigate('/login')" style="cursor:pointer">
         <h4>💬 محادثة داخلية</h4>
-        <p>راسل فريق الدعم مباشرة من داخل المنصة وتابع الردود.</p>
+        <p>راسل فريق الدعم مباشرة من داخل المنصة.</p>
         <p style="margin-top:12px;color:#F59E0B;font-weight:700">ابدأ محادثة ←</p>
       </div>
     </div>
@@ -370,12 +299,16 @@ async function renderHelp() {
     <div class="sec-title"><h2>❓ أسئلة شائعة</h2></div>
     <div class="policy-grid">
       <div class="policy-card">
-        <h4>⏱️ كم تستغرق مدة التسليم؟</h4>
-        <p>من 3 إلى 6 أسابيع حسب الوزن والدولة المصدرة وطريقة الشحن (جوي أسرع، بحري أوفر).</p>
+        <h4>🎯 كيف أطلب منتج؟</h4>
+        <p>اذهب إلى "اطلب الآن"، الصق رابط المنتج، اكتب تفاصيل ما تريده، وأدخل بيانات المستلم. سنراسلك بعرض السعر.</p>
+      </div>
+      <div class="policy-card">
+        <h4>⏱️ كم يستغرق السعر؟</h4>
+        <p>عادةً خلال ساعات من إرسال طلبك، وأقصى حد 24 ساعة.</p>
       </div>
       <div class="policy-card">
         <h4>💳 ما هي طرق الدفع؟</h4>
-        <p>الدفع بالكريبتو USDT فقط عبر شبكتي TRC20 و BEP20. الدفع مسبق إلزامي لتأمين الطلب.</p>
+        <p>الدفع بالكريبتو USDT فقط عبر شبكتي TRC20 و BEP20. الدفع مسبق إلزامي.</p>
       </div>
       <div class="policy-card">
         <h4>🛡️ هل هناك ضمان؟</h4>
@@ -383,179 +316,28 @@ async function renderHelp() {
       </div>
       <div class="policy-card">
         <h4>📦 كيف أتابع طلبي؟</h4>
-        <p>من صفحة "طلباتي" حيث يظهر رقم طلبك وحالة الشحنة بمراحل مفصلة (8 مراحل من الشراء حتى التسليم).</p>
+        <p>من صفحة "طلباتي" حيث يظهر رقم طلبك وحالة الشحنة بمراحل مفصلة.</p>
       </div>
     </div>`;
 }
 
-// ==================== تحليل الرابط ====================
-async function analyzeUrl() {
-  const url = document.getElementById('o_url')?.value.trim();
-  const statusBox = document.getElementById('aiStatus');
-  const resultBox = document.getElementById('aiResult');
-  if (!url) { toast('الصق رابط المنتج أولاً', 'error'); return; }
-  if (!/^https?:\/\/.+/i.test(url)) { toast('الرابط غير صالح', 'error'); return; }
-
-  if (statusBox) {
-    statusBox.style.display = 'block';
-    statusBox.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;padding:14px;background:#EEF2FF;border-radius:12px;border-right:4px solid #6366F1">
-        <div class="spinner"></div>
-        <div>
-          <strong style="color:#4338CA">🤖 جاري تحليل الرابط…</strong>
-          <p style="font-size:12px;color:#6366F1;margin-top:4px">قد تأخذ العملية 10-20 ثانية</p>
-        </div>
-      </div>`;
-  }
-  if (resultBox) resultBox.innerHTML = '';
-
-  try {
-    const r = await api('/api/analyze-url', 'POST', { url });
-    if (statusBox) statusBox.style.display = 'none';
-
-    const hasTitle = r.product_title && r.product_title.trim().length >= 5;
-    const hasPrice = r.price_usd && r.price_usd > 0;
-    const hasImage = r.image_url && r.image_url.length > 10;
-
-    if (!r.found || !hasTitle) {
-      if (resultBox) resultBox.innerHTML = `
-        <div class="warn" style="background:#FEF3C7;border-color:#FCD34D;border-right-color:#F59E0B;color:#78350F">
-          ⚠️ <strong>لم نستطع استخراج تفاصيل المنتج تلقائياً</strong><br>
-          <span style="font-size:13px">السبب المحتمل: المتجر يحجب الطلبات الآلية. يرجى إدخال التفاصيل يدوياً أدناه.</span>
-        </div>`;
-      toast('تعذّر استخراج التفاصيل — أدخلها يدوياً', 'error');
-      return;
-    }
-
-    let filled = 0;
-    if (hasTitle) {
-      const el = document.getElementById('o_title');
-      if (el && !el.value) { el.value = r.product_title; filled++; }
-    }
-    if (hasPrice) {
-      const el = document.getElementById('o_price');
-      if (el && !el.value) { el.value = r.price_usd; filled++; }
-    }
-    if (r.weight_kg) {
-      const el = document.getElementById('o_weight');
-      if (el && !el.value) { el.value = r.weight_kg; filled++; }
-    }
-    if (r.store_name) {
-      const sel = document.getElementById('o_store');
-      if (sel) for (const o of sel.options)
-        if (o.value.includes(r.store_name) || r.store_name.includes(o.value)) { sel.value = o.value; break; }
-    }
-
-    const imgBox = document.getElementById('o_imagePreview');
-    if (imgBox && hasImage) {
-      imgBox.innerHTML = `
-        <div style="display:flex;gap:14px;align-items:start;padding:14px;background:#F0FDF4;border-radius:12px;border-right:4px solid #10B981">
-          <img src="${esc(r.image_url)}" style="width:90px;height:90px;object-fit:cover;border-radius:10px;background:#fff" onerror="this.style.display='none'">
-          <div style="flex:1">
-            <p style="font-weight:700;color:#065F46;margin-bottom:4px">✅ صورة المنتج</p>
-            <p style="font-size:12px;color:#10B981">الثقة: ${r.confidence === 'high' ? 'عالية' : r.confidence === 'low' ? 'منخفضة' : 'متوسطة'}</p>
-          </div>
-        </div>`;
-    } else if (imgBox) {
-      imgBox.innerHTML = '';
-    }
-
-    const sizesBox = document.getElementById('sizesBox');
-    if (sizesBox && r.sizes && r.sizes.length) {
-      sizesBox.style.display = 'block';
-      sizesBox.innerHTML = `
-        <label style="font-size:14px;font-weight:700;display:block;margin-bottom:8px;color:#0F172A">📏 اختر المقاس:</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px">
-          ${r.sizes.map(s => `<button type="button" class="option-btn" data-size="${esc(s)}" onclick="selectSize(this)">${esc(s)}</button>`).join('')}
-        </div>`;
-    } else if (sizesBox) {
-      sizesBox.style.display = 'none';
-      sizesBox.innerHTML = '';
-    }
-
-    const colorsBox = document.getElementById('colorsBox');
-    if (colorsBox && r.colors && r.colors.length) {
-      colorsBox.style.display = 'block';
-      colorsBox.innerHTML = `
-        <label style="font-size:14px;font-weight:700;display:block;margin-bottom:8px;color:#0F172A">🎨 اختر اللون:</label>
-        <div style="display:flex;flex-wrap:wrap;gap:8px">
-          ${r.colors.map(c => `<button type="button" class="option-btn" data-color="${esc(c)}" onclick="selectColor(this)">${esc(c)}</button>`).join('')}
-        </div>`;
-    } else if (colorsBox) {
-      colorsBox.style.display = 'none';
-      colorsBox.innerHTML = '';
-    }
-
-    if (r.description) {
-      const notesEl = document.getElementById('o_notes');
-      if (notesEl && !notesEl.value) notesEl.value = r.description;
-    }
-
-    if (resultBox) resultBox.innerHTML = `
-      <div style="background:#EEF2FF;padding:14px;border-radius:12px;border-right:4px solid #6366F1;margin-top:12px">
-        <p style="font-weight:700;color:#4338CA;margin-bottom:6px">🤖 تم التحليل بنجاح</p>
-        <p style="font-size:12px;color:#6366F1">تم ملء ${filled} حقلاً تلقائياً — يمكنك التعديل قبل التأكيد.</p>
-      </div>`;
-
-    recalcOrder();
-    toast('✅ تم تحليل الرابط بنجاح');
-  } catch (e) {
-    if (statusBox) statusBox.style.display = 'none';
-    if (resultBox) resultBox.innerHTML = `<div class="warn">⚠️ ${esc(e.message)}</div>`;
-    toast(e.message, 'error');
-  }
-}
-window.analyzeUrl = analyzeUrl;
-
-function selectSize(btn) {
-  document.querySelectorAll('.option-btn[data-size]').forEach(b => b.classList.remove('selected'));
-  btn.classList.add('selected');
-  window._selectedSize = btn.dataset.size;
-}
-window.selectSize = selectSize;
-
-function selectColor(btn) {
-  document.querySelectorAll('.option-btn[data-color]').forEach(b => b.classList.remove('selected'));
-  btn.classList.add('selected');
-  window._selectedColor = btn.dataset.color;
-}
-window.selectColor = selectColor;
-
-// ==================== صفحة الطلب الجديدة ====================
+// ==================== صفحة الطلب ====================
 async function renderNewOrder() {
   if (!state.user) { toast('سجّل الدخول أولاً', 'error'); navigate('/login'); return; }
 
-  const prefill = JSON.parse(sessionStorage.getItem('prefill_order') || 'null');
   const stores = state.settings.stores || [];
-  const wallets = state.settings.wallets || [];
   const regions = state.settings.regions || [];
-  const geminiEnabled = state.settings.gemini_enabled;
-
-  window._selectedNet = wallets[0]?.network || '';
-  window._selectedSize = '';
-  window._selectedColor = '';
-  window._productAnalysis = null;
 
   document.getElementById('app').innerHTML = `
-    <div class="sec-title"><h2>📦 إنشاء طلب جديد</h2></div>
-    <p style="color:#64748B;margin-bottom:20px">الصق رابط المنتج وسيقوم الذكاء الاصطناعي باستخراج التفاصيل تلقائياً — أو أدخلها يدوياً.</p>
+    <div class="sec-title"><h2>📦 طلب عرض سعر</h2></div>
+    <p style="color:#64748B;margin-bottom:20px">
+      الصق رابط المنتج من أمازون أو أي متجر عالمي، اكتب لنا ما تريده بالتفصيل،
+      وسنرسل لك السعر النهائي (سعر المنتج + الشحن + الجمارك) خلال ساعات.
+    </p>
 
     <div class="calc-card">
       <div class="calc-section">
-        <h3><span class="num">1</span> المنتج المطلوب ${geminiEnabled ? '<span style="font-size:11px;background:#6366F1;color:#fff;padding:3px 10px;border-radius:10px;margin-right:8px">🤖 تحليل ذكي</span>' : ''}</h3>
-        <div class="fg">
-          <label>رابط المنتج ${geminiEnabled ? '<span style="color:#6366F1">(سيتم التحليل تلقائياً)</span>' : ''}</label>
-          <div style="display:flex;gap:8px">
-            <input id="o_url" placeholder="https://www.amazon.com/dp/..." style="direction:ltr;text-align:left;flex:1" oninput="previewLink()" onblur="${geminiEnabled ? 'analyzeUrl()' : ''}">
-            ${geminiEnabled ? '<button type="button" class="btn-primary" onclick="analyzeUrl()" style="white-space:nowrap;padding:11px 18px">🤖 حلّل</button>' : ''}
-          </div>
-          <div class="helper" id="linkPreview"></div>
-        </div>
-
-        <div id="aiStatus" style="display:none"></div>
-        <div id="aiResult"></div>
-        <div id="o_imagePreview" style="margin-top:10px"></div>
-
+        <h3><span class="num">1</span> المنتج المطلوب</h3>
         <div class="fg">
           <label>المتجر</label>
           <select id="o_store">
@@ -564,200 +346,98 @@ async function renderNewOrder() {
           </select>
         </div>
         <div class="fg">
-          <label>اسم المنتج</label>
+          <label>رابط المنتج *</label>
+          <input id="o_url" placeholder="https://www.amazon.com/dp/..." style="direction:ltr;text-align:left" oninput="tryExtractTitle()">
+          <div class="helper">انسخ الرابط من صفحة المنتج في المتجر</div>
+        </div>
+        <div class="fg">
+          <label>اسم المنتج *</label>
           <input id="o_title" placeholder="مثال: Apple iPhone 15 Pro Max 256GB">
+          <div class="helper">يُملأ تلقائياً من الرابط إن أمكن — يمكنك تعديله</div>
         </div>
-
-        <div id="sizesBox" style="display:none;margin-top:14px"></div>
-        <div id="colorsBox" style="display:none;margin-top:14px"></div>
-
-        <div class="fg" style="margin-top:14px">
-          <label>📝 ملاحظاتك ومواصفات إضافية</label>
-          <textarea id="o_notes" placeholder="مثال: أرجو اللون الأسود إن لم يتوفر الأزرق، المقاس L إن لم يتوفر M، يرجى التأكد من أن الجهاز أصلي مغلق..."></textarea>
-          <div class="helper">اكتب هنا أي تفاصيل مهمة (لون بديل، مقاس احتياطي، ملاحظات على المنتج) — ستصل للإدارة مع الطلب.</div>
+        <div class="fg">
+          <label>📝 ما تريده بالتفصيل *</label>
+          <textarea id="o_desc" placeholder="مثال: أريد اللون الأزرق تيتانيوم، سعة 256GB، إصدار أمريكي أصلي مغلق، مع ضمان سنة. يرجى التأكد من أنه يدعم شريحة اتصال سورية."></textarea>
+          <div class="helper">اكتب اللون، الحجم، السعة، أي مواصفات، بلد الإصدار، ضمان — كل ما هو مهم.</div>
+        </div>
+        <div class="fg">
+          <label>الكمية</label>
+          <input type="number" id="o_qty" value="1" min="1" max="20">
         </div>
       </div>
 
       <div class="calc-section">
-        <h3><span class="num">2</span> السعر والوزن</h3>
+        <h3><span class="num">2</span> بيانات المستلم</h3>
         <div class="calc-grid">
           <div>
-            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">سعر المنتج (USD)</label>
-            <input type="number" id="o_price" step="0.01" min="0" value="${prefill ? prefill.price : ''}" oninput="recalcOrder()">
-          </div>
-          <div>
-            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">الكمية</label>
-            <input type="number" id="o_qty" min="1" max="99" value="${prefill ? prefill.qty : 1}" oninput="recalcOrder()">
-          </div>
-          <div>
-            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">الوزن التقريبي (كغ)</label>
-            <input type="number" id="o_weight" step="0.1" min="0.1" value="${prefill ? prefill.weight : ''}" oninput="recalcOrder()">
-          </div>
-          <div>
-            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">المحافظة</label>
-            <select id="o_region" onchange="recalcOrder()">
-              <option value="">-- اختر --</option>
-              ${regions.map(r => `<option value="${r.id}" ${prefill && prefill.regionId == r.id ? 'selected' : ''}>${esc(r.name_ar)}</option>`).join('')}
-            </select>
-          </div>
-        </div>
-        <div class="radio-group" style="margin-top:14px">
-          <div class="radio-btn">
-            <input type="radio" name="oship" id="oship_air" value="air" ${prefill && prefill.method === 'sea' ? '' : 'checked'} onchange="recalcOrder()">
-            <label for="oship_air">✈️ جوي<span class="sub">$5/كغ — 3 إلى 4 أسابيع</span></label>
-          </div>
-          <div class="radio-btn">
-            <input type="radio" name="oship" id="oship_sea" value="sea" ${prefill && prefill.method === 'sea' ? 'checked' : ''} onchange="recalcOrder()">
-            <label for="oship_sea">🚢 بحري<span class="sub">$2/كغ — 5 إلى 6 أسابيع</span></label>
-          </div>
-        </div>
-      </div>
-
-      <div id="orderQuote"></div>
-
-      <div class="calc-section">
-        <h3><span class="num">3</span> بيانات المستلم</h3>
-        <div class="calc-grid">
-          <div>
-            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">الاسم الثلاثي للمستلم</label>
+            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">الاسم الثلاثي *</label>
             <input id="o_name" placeholder="أحمد محمد علي">
           </div>
           <div>
-            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">رقم هاتف المستلم</label>
+            <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">رقم الهاتف *</label>
             <input id="o_phone" placeholder="09xxxxxxxx" maxlength="10">
           </div>
         </div>
         <div class="fg" style="margin-top:14px">
-          <label>العنوان الكامل / المنطقة</label>
-          <textarea id="o_address" placeholder="دمشق - المزة - شارع الجلاء - بناء رقم 5 - الطابق الثاني"></textarea>
+          <label>المحافظة *</label>
+          <select id="o_region">
+            <option value="">-- اختر --</option>
+            ${regions.map(r => `<option value="${r.id}">${esc(r.name_ar)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fg">
+          <label>العنوان الكامل *</label>
+          <textarea id="o_address" placeholder="دمشق - المزة - شارع الجلاء - بناء 5 - ط2"></textarea>
         </div>
       </div>
 
-      <div class="calc-section">
-        <h3><span class="num">4</span> الدفع بالـ USDT</h3>
-        <div class="warn">
-          <strong>⚠️ الدفع مسبق إلزامي:</strong> اختر الشبكة، حوّل المبلغ إلى العنوان أدناه، ثم الصق رقم عملية التحويل (TxID) في الحقل.
-        </div>
-        <div class="net-tabs" id="netTabs">
-          ${wallets.map((w, i) => `<div class="net-tab ${i === 0 ? 'active' : ''}" data-net="${esc(w.network)}" data-addr="${esc(w.address)}" onclick="selectNet(this)">${esc(w.network)}</div>`).join('')}
-        </div>
-        <div class="wallet">
-          <code id="walletAddr">${esc(wallets[0]?.address || '')}</code>
-          <button onclick="copyWallet()">📋 نسخ</button>
-        </div>
-        <div class="fg" style="margin-top:14px">
-          <label>رقم عملية التحويل (TxID)</label>
-          <input id="o_tx" placeholder="0x..." style="direction:ltr;text-align:left;font-family:monospace">
-        </div>
-        <div class="fg">
-          <label>رابط إثبات الدفع (اختياري — صورة الشاشة)</label>
-          <input id="o_proof" placeholder="https://..." style="direction:ltr;text-align:left">
-        </div>
+      <div class="warn" style="background:#FEF3C7;border-color:#FCD34D;border-right-color:#F59E0B;color:#78350F">
+        <strong>📌 كيف يعمل النظام؟</strong><br>
+        1. ترسل طلبك الآن (بدون دفع)<br>
+        2. نراجع الطلب ونرسل لك السعر النهائي (سعر المنتج + الشحن + الجمارك)<br>
+        3. توافق على السعر وتدفع بالـ USDT<br>
+        4. نشتري ونشحن ونتابع معك حتى الاستلام
       </div>
 
       <button class="btn-primary" style="width:100%;padding:16px;font-size:16px;background:#F59E0B;border-color:#F59E0B;color:#0F172A;font-weight:800;border-radius:14px" onclick="submitOrder()">
-        ✅ تأكيد الطلب
+        📩 إرسال طلب عرض السعر
       </button>
     </div>
-
-    <style>
-      .spinner {
-        width: 24px; height: 24px;
-        border: 3px solid #C7D2FE;
-        border-top-color: #6366F1;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-        flex-shrink: 0;
-      }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      .option-btn {
-        padding: 8px 16px;
-        background: #F1F5F9;
-        border: 2px solid #E2E8F0;
-        border-radius: 10px;
-        font-weight: 700;
-        font-size: 13px;
-        color: #0F172A;
-        cursor: pointer;
-        transition: .15s;
-      }
-      .option-btn:hover { border-color: #F59E0B; }
-      .option-btn.selected {
-        background: #FEF3C7;
-        border-color: #F59E0B;
-        color: #78350F;
-      }
-    </style>
   `;
-
-  recalcOrder();
 }
 
-function previewLink() {
-  const url = document.getElementById('o_url').value.trim();
-  const p = document.getElementById('linkPreview');
-  if (!url) { p.textContent = ''; return; }
-  const l = url.toLowerCase();
-  let store = '';
-  if (l.includes('amazon.')) store = '🅰️ أمازون';
-  else if (l.includes('aliexpress.')) store = '🅰️ علي إكسبريس';
-  else if (l.includes('ebay.')) store = '🅴 إي باي';
-  else if (l.includes('walmart.')) store = '🆆 وول مارت';
-  else store = '🌐 متجر آخر';
-  p.innerHTML = `تم اكتشاف: <strong>${store}</strong>`;
-  if (store !== '🌐 متجر آخر') {
-    const sel = document.getElementById('o_store');
-    const storeName = store.replace(/^[^ ]+ /, '');
-    for (const opt of sel.options) if (opt.value === storeName) { sel.value = storeName; break; }
-  }
-}
-window.previewLink = previewLink;
-
-function selectNet(el) {
-  document.querySelectorAll('.net-tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById('walletAddr').textContent = el.dataset.addr;
-  window._selectedNet = el.dataset.net;
-}
-window.selectNet = selectNet;
-
-function copyWallet() {
-  const a = document.getElementById('walletAddr').textContent;
-  navigator.clipboard.writeText(a).then(() => toast('✓ تم نسخ العنوان'));
-}
-window.copyWallet = copyWallet;
-
-async function recalcOrder() {
-  const price = parseFloat(document.getElementById('o_price')?.value);
-  const qty = parseInt(document.getElementById('o_qty')?.value) || 1;
-  const weight = parseFloat(document.getElementById('o_weight')?.value);
-  const regionId = document.getElementById('o_region')?.value;
-  const method = document.querySelector('input[name="oship"]:checked')?.value || 'air';
-  const box = document.getElementById('orderQuote');
-  if (!box) return;
-  if (!price || !weight || !regionId) { box.innerHTML = ''; return; }
+function tryExtractTitle() {
+  const url = document.getElementById('o_url')?.value;
+  if (!url) return;
   try {
-    const q = await api('/api/quote', 'POST', {
-      product_price_usd: price, quantity: qty, weight_kg: weight,
-      shipping_method: method, region_id: parseInt(regionId)
-    });
-    box.innerHTML = `
-      <div class="calc-result">
-        <h3>💰 السعر النهائي التقديري</h3>
-        <div class="calc-line"><span>سعر المنتج × ${qty}</span><span class="v">$${fmt(q.product_cost)}</span></div>
-        <div class="calc-line"><span>الشحن (${q.rounded_weight_kg} كغ مجبور)</span><span class="v">$${fmt(q.shipping_cost)}</span></div>
-        <div class="calc-line"><span>الجمارك والخدمة (5%)</span><span class="v">$${fmt(q.customs)}</span></div>
-        <div class="calc-line"><span>التوصيل داخل سوريا</span><span class="v" style="color:#10B981">مجاني 🎉</span></div>
-        <div class="calc-line total"><span>الإجمالي (USDT)</span><span>${fmt(q.total_usdt)}</span></div>
-      </div>`;
-  } catch (e) { box.innerHTML = `<div class="warn">${esc(e.message)}</div>`; }
+    let m = url.match(/\/([^\/]+)\/dp\/[A-Z0-9]{10}/i);
+    if (!m) m = url.match(/amazon\.[a-z.]+\/([^\/]+?)\/dp\//i);
+    if (!m) m = url.match(/\/([^\/]+)\/product\//i);
+    if (!m) m = url.match(/\/item\/([^\/?]+)/i);
+    if (m && m[1]) {
+      const title = decodeURIComponent(m[1])
+        .replace(/-/g, ' ')
+        .replace(/_/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const el = document.getElementById('o_title');
+      if (el && !el.value && title.length > 5 && title.length < 200) el.value = title;
+    }
+    const stores = state.settings.stores || [];
+    const sel = document.getElementById('o_store');
+    if (sel && !sel.value) {
+      const l = url.toLowerCase();
+      if (l.includes('amazon.')) sel.value = 'أمازون';
+      else if (l.includes('aliexpress.')) sel.value = 'علي إكسبريس';
+      else if (l.includes('ebay.')) sel.value = 'إي باي';
+      else if (l.includes('walmart.')) sel.value = 'وول مارت';
+    }
+  } catch (e) {}
 }
-window.recalcOrder = recalcOrder;
+window.tryExtractTitle = tryExtractTitle;
 
 async function submitOrder() {
-  const analysis = window._productAnalysis;
   const body = {
-    country_id: 1,
     region_id: parseInt(document.getElementById('o_region').value),
     receiver_name: document.getElementById('o_name').value.trim(),
     receiver_phone: document.getElementById('o_phone').value.trim(),
@@ -765,30 +445,19 @@ async function submitOrder() {
     store_name: document.getElementById('o_store').value.trim(),
     product_title: document.getElementById('o_title').value.trim(),
     product_url: document.getElementById('o_url').value.trim(),
-    product_image: analysis?.image_url || '',
-    product_price_usd: parseFloat(document.getElementById('o_price').value),
-    quantity: parseInt(document.getElementById('o_qty').value) || 1,
-    weight_kg: parseFloat(document.getElementById('o_weight').value),
-    selected_size: window._selectedSize || '',
-    selected_color: window._selectedColor || '',
-    customer_notes: document.getElementById('o_notes').value.trim(),
-    product_analysis: analysis ? JSON.stringify(analysis) : '',
-    shipping_method: document.querySelector('input[name="oship"]:checked')?.value || 'air',
-    wallet_network: window._selectedNet || '',
-    tx_ref: document.getElementById('o_tx').value.trim(),
-    tx_proof_url: document.getElementById('o_proof').value.trim()
+    customer_description: document.getElementById('o_desc').value.trim(),
+    quantity: parseInt(document.getElementById('o_qty').value) || 1
   };
   if (!body.product_title || !body.product_url) { toast('اسم المنتج ورابطه مطلوبان', 'error'); return; }
-  if (!body.receiver_name || body.receiver_name.split(/\s+/).length < 3) { toast('الاسم الثلاثي للمستلم مطلوب', 'error'); return; }
-  if (!/^09\d{8}$/.test(body.receiver_phone)) { toast('هاتف المستلم 10 أرقام يبدأ بـ 09', 'error'); return; }
-  if (!body.full_address) { toast('العنوان مطلوب', 'error'); return; }
+  if (!body.customer_description || body.customer_description.length < 5) { toast('اكتب وصف ما تريده بالتفصيل', 'error'); return; }
+  if (!body.receiver_name || body.receiver_name.split(/\s+/).length < 3) { toast('الاسم الثلاثي مطلوب', 'error'); return; }
+  if (!/^09\d{8}$/.test(body.receiver_phone)) { toast('الهاتف 10 أرقام يبدأ بـ 09', 'error'); return; }
   if (!body.region_id) { toast('اختر المحافظة', 'error'); return; }
-  if (!body.tx_ref || body.tx_ref.length < 6) { toast('رقم عملية التحويل (TxID) مطلوب', 'error'); return; }
+  if (!body.full_address) { toast('العنوان مطلوب', 'error'); return; }
 
   try {
     const r = await api('/api/orders', 'POST', body);
-    sessionStorage.removeItem('prefill_order');
-    toast('✅ تم إنشاء طلبك بنجاح');
+    toast('✅ تم إرسال طلبك — سنراسلك بالسعر قريباً');
     setTimeout(() => navigate('/order/' + r.order_id), 700);
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -814,29 +483,26 @@ async function renderOrders() {
             <span>طلب <span class="order-num">${esc(o.order_number)}</span></span>
             <span class="status-chip st-${o.status}">${labels[o.status] || o.status}</span>
           </h3>
-          <div style="display:flex;gap:14px;align-items:start;margin:12px 0">
-            ${o.product_image ? `<img src="${esc(o.product_image)}" style="width:80px;height:80px;object-fit:cover;border-radius:10px;background:#F1F5F9;flex-shrink:0" onerror="this.style.display='none'">` : ''}
-            <div class="info-grid" style="flex:1;margin:0">
-              <p><strong>المنتج</strong>${esc(o.product_title)}</p>
-              <p><strong>المتجر</strong>${esc(o.store_name || '-')}</p>
-              <p><strong>المحافظة</strong>${esc(o.region_name || '-')}</p>
-              <p><strong>المستلم</strong>${esc(o.receiver_name)}</p>
-              <p><strong>الهاتف</strong>${esc(o.receiver_phone)}</p>
-              <p><strong>الإجمالي</strong>$${fmt(o.admin_adjusted_usd || o.total_usd)}</p>
-            </div>
+          <div class="info-grid">
+            <p><strong>المنتج</strong>${esc(o.product_title)}</p>
+            <p><strong>المتجر</strong>${esc(o.store_name || '-')}</p>
+            <p><strong>المحافظة</strong>${esc(o.region_name || '-')}</p>
+            <p><strong>المستلم</strong>${esc(o.receiver_name)}</p>
+            <p><strong>الهاتف</strong>${esc(o.receiver_phone)}</p>
+            ${o.total_usd > 0 ? `<p><strong>الإجمالي</strong>$${fmt(o.total_usd)}</p>` : '<p><strong>الحالة</strong>بانتظار عرض السعر</p>'}
           </div>
           <p class="mini" style="margin-top:10px">📅 ${new Date(o.created_at).toLocaleString('ar-EG')}</p>
           <button class="btn-primary btn-sm" style="margin-top:10px" onclick="navigate('/order/${o.id}')">عرض التفاصيل والتتبع ←</button>
         </div>`).join('')}`;
 }
 
-// ==================== صفحة تفاصيل الطلب والتتبع ====================
+// ==================== صفحة تفاصيل الطلب ====================
 async function renderOrderDetail(id) {
   if (!state.user) { navigate('/login'); return; }
   const o = await api('/api/orders/' + id);
   const labels = state.settings.status_labels || {};
-  const flow = ['awaiting_payment','payment_received','purchased','warehouse_foreign','international_shipping','arrived_syria','out_for_delivery','delivered'];
-  const currentIdx = flow.indexOf(o.status);
+  const flow = ['pending_quote','quote_sent','awaiting_payment','payment_received','purchased','warehouse_foreign','international_shipping','arrived_syria','out_for_delivery','delivered'];
+  const wallets = state.settings.wallets || [];
 
   document.getElementById('app').innerHTML = `
     <div class="sec-title">
@@ -844,40 +510,76 @@ async function renderOrderDetail(id) {
       <span class="status-chip st-${o.status}">${labels[o.status] || o.status}</span>
     </div>
 
-    <div class="summary" style="margin-top:0">
-      <h3>📋 تفاصيل المنتج</h3>
-      <div style="display:flex;gap:18px;align-items:start;flex-wrap:wrap">
-        ${o.product_image ? `<img src="${esc(o.product_image)}" style="width:140px;height:140px;object-fit:cover;border-radius:12px;background:#F1F5F9;flex-shrink:0" onerror="this.style.display='none'">` : ''}
-        <div class="info-grid" style="flex:1;min-width:280px">
-          <p><strong>المتجر</strong>${esc(o.store_name || '-')}</p>
-          <p><strong>اسم المنتج</strong>${esc(o.product_title)}</p>
-          <p><strong>الرابط</strong><a href="${esc(o.product_url)}" target="_blank" style="direction:ltr;display:inline-block;font-size:11px;word-break:break-all">فتح الرابط</a></p>
-          <p><strong>الكمية</strong>${o.quantity}</p>
-          <p><strong>الوزن</strong>${o.weight_kg} كغ</p>
-          <p><strong>طريقة الشحن</strong>${o.shipping_method === 'sea' ? '🚢 بحري' : '✈️ جوي'}</p>
-          ${o.selected_size ? `<p><strong>المقاس</strong>${esc(o.selected_size)}</p>` : ''}
-          ${o.selected_color ? `<p><strong>اللون</strong>${esc(o.selected_color)}</p>` : ''}
+    ${o.status === 'quote_sent' ? `
+      <div class="summary" style="margin-top:0;background:#DBEAFE;border:2px solid #3B82F6">
+        <h3 style="color:#1E40AF">💰 عرض السعر جاهز — بانتظار موافقتك</h3>
+        <div class="total-line"><span>سعر المنتج من المتجر</span><span>$${fmt(o.admin_quote_price)}</span></div>
+        <div class="total-line"><span>الشحن الدولي</span><span>$${fmt(o.admin_quote_shipping)}</span></div>
+        <div class="total-line"><span>الجمارك والخدمة</span><span>$${fmt(o.admin_quote_customs)}</span></div>
+        <div class="total-line big"><span>الإجمالي</span><span>$${fmt(o.total_usd)} USDT</span></div>
+        ${o.admin_quote_notes ? `<p style="background:#fff;padding:12px;border-radius:8px;margin-top:12px;color:#1E40AF"><strong>ملاحظة الإدارة:</strong> ${esc(o.admin_quote_notes)}</p>` : ''}
+        <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap">
+          <button class="btn-green" style="flex:1;min-width:200px;padding:14px;font-weight:800" onclick="approveQuote(${o.id})">✅ أوافق — أريد إتمام الشراء</button>
+          <button class="btn-red" style="flex:1;min-width:200px;padding:14px;font-weight:800" onclick="rejectQuote(${o.id})">❌ لا أوافق</button>
         </div>
       </div>
-      ${o.customer_notes ? `
-        <div style="margin-top:14px;padding:14px;background:#FEF3C7;border-radius:10px;border-right:3px solid #F59E0B">
-          <strong style="color:#78350F;font-size:13px">📝 ملاحظاتك:</strong>
-          <p style="color:#78350F;margin-top:6px;line-height:1.7;font-size:13px">${esc(o.customer_notes)}</p>
-        </div>` : ''}
-    </div>
+    ` : ''}
+
+    ${o.status === 'awaiting_payment' ? `
+      <div class="summary" style="margin-top:0;background:#FEF3C7;border:2px solid #F59E0B">
+        <h3 style="color:#78350F">💳 الدفع مطلوب الآن</h3>
+        <p style="margin-bottom:14px">حوّل المبلغ التالي بالـ USDT إلى إحدى المحافظ أدناه، ثم الصق رقم العملية (TxID).</p>
+        <p style="font-size:22px;font-weight:800;color:#B12704;margin-bottom:14px">$${fmt(o.total_usd)} USDT</p>
+        <div class="net-tabs" id="netTabs">
+          ${wallets.map((w, i) => `<div class="net-tab ${i === 0 ? 'active' : ''}" data-net="${esc(w.network)}" data-addr="${esc(w.address)}" onclick="selectNet(this)">${esc(w.network)}</div>`).join('')}
+        </div>
+        <div class="wallet">
+          <code id="walletAddr">${esc(wallets[0]?.address || '')}</code>
+          <button onclick="copyWallet()">📋 نسخ</button>
+        </div>
+        <div class="fg" style="margin-top:14px">
+          <label>رقم عملية التحويل (TxID)</label>
+          <input id="payTx" placeholder="0x..." style="direction:ltr;text-align:left;font-family:monospace">
+        </div>
+        <div class="fg">
+          <label>رابط إثبات الدفع (اختياري)</label>
+          <input id="payProof" placeholder="https://..." style="direction:ltr;text-align:left">
+        </div>
+        <button class="btn-green" style="width:100%;padding:14px;font-weight:800" onclick="submitPayment(${o.id})">💸 تأكيد الدفع</button>
+      </div>
+    ` : ''}
+
+    ${o.status === 'quote_rejected' ? `
+      <div class="summary" style="margin-top:0;background:#FEE2E2;border:2px solid #DC2626">
+        <h3 style="color:#991B1B">❌ لقد رفضت عرض السعر</h3>
+        <p>إذا كان لديك استفسار أو تريد طلباً جديداً، يمكنك إنشاء طلب جديد أو التواصل مع الدعم.</p>
+        <button class="btn-primary" style="margin-top:12px" onclick="navigate('/new-order')">طلب جديد</button>
+      </div>
+    ` : ''}
 
     <div class="summary" style="margin-top:16px">
-      <h3>💰 تفاصيل التسعير</h3>
-      <div class="total-line"><span>سعر المنتج (${o.quantity} قطعة)</span><span>$${fmt(o.product_price_usd * o.quantity)}</span></div>
-      <div class="total-line"><span>الشحن الدولي</span><span>$${fmt(o.shipping_cost_usd)}</span></div>
-      <div class="total-line">
-        <span>الجمارك والخدمة ${o.admin_customs_usd ? `<span style="color:#F59E0B;font-size:11px">(معدّلة من الإدارة)</span>` : '(5%)'}</span>
-        <span>$${fmt(o.admin_customs_usd || o.customs_usd)}</span>
+      <h3>📋 تفاصيل المنتج</h3>
+      <div class="info-grid">
+        <p><strong>المتجر</strong>${esc(o.store_name || '-')}</p>
+        <p><strong>اسم المنتج</strong>${esc(o.product_title)}</p>
+        <p><strong>الرابط</strong><a href="${esc(o.product_url)}" target="_blank" style="direction:ltr;display:inline-block;font-size:11px">فتح</a></p>
+        <p><strong>الكمية</strong>${o.quantity}</p>
       </div>
-      <div class="total-line"><span>التوصيل داخل سوريا</span><span style="color:#10B981">مجاني 🎉</span></div>
-      ${o.admin_adjusted_usd ? `<div class="total-line" style="color:#F59E0B"><span>⚠️ السعر النهائي معدّل من الإدارة</span><span>$${fmt(o.admin_adjusted_usd)}</span></div>` : ''}
-      <div class="total-line big"><span>الإجمالي</span><span>$${fmt(o.admin_adjusted_usd || o.total_usd)} USDT</span></div>
+      <div style="margin-top:12px;padding:14px;background:#F8FAFC;border-radius:10px">
+        <strong style="font-size:13px">📝 طلبك:</strong>
+        <p style="margin-top:6px;color:#475569;line-height:1.8">${esc(o.customer_description || '-')}</p>
+      </div>
     </div>
+
+    ${o.admin_quote_price ? `
+      <div class="summary" style="margin-top:16px">
+        <h3>💰 تفاصيل التسعير</h3>
+        <div class="total-line"><span>سعر المنتج</span><span>$${fmt(o.admin_quote_price)}</span></div>
+        <div class="total-line"><span>الشحن الدولي</span><span>$${fmt(o.admin_quote_shipping)}</span></div>
+        <div class="total-line"><span>الجمارك والخدمة</span><span>$${fmt(o.admin_quote_customs)}</span></div>
+        <div class="total-line big"><span>الإجمالي</span><span>$${fmt(o.total_usd)} USDT</span></div>
+      </div>
+    ` : ''}
 
     <div class="summary" style="margin-top:16px">
       <h3>🚚 بيانات المستلم</h3>
@@ -895,17 +597,16 @@ async function renderOrderDetail(id) {
         <div class="info-grid">
           <p><strong>الشبكة</strong>${esc(o.wallet_network)}</p>
           <p><strong>TxID</strong><span style="direction:ltr;display:inline-block;font-size:11px;word-break:break-all">${esc(o.tx_ref)}</span></p>
-          ${o.tx_proof_url ? `<p><strong>إثبات الدفع</strong><a href="${esc(o.tx_proof_url)}" target="_blank">عرض</a></p>` : ''}
         </div>
       </div>` : ''}
 
-    <div class="sec-title"><h2>📍 تتبع الشحنة</h2></div>
+    <div class="sec-title"><h2>📍 تتبع الطلب</h2></div>
     <div class="summary" style="margin-top:0">
       <div class="tracking-timeline">
         ${flow.map((s, i) => {
-          const done = i <= currentIdx;
-          const current = i === currentIdx && s !== 'delivered';
           const step = (o.tracking || []).find(t => t.status === s);
+          const done = !!step;
+          const current = o.status === s;
           return `
             <div class="track-step ${done ? 'done' : ''} ${current ? 'current' : ''}">
               <div class="track-icon">${done ? '✓' : i + 1}</div>
@@ -924,7 +625,54 @@ async function renderOrderDetail(id) {
         <p style="color:#475569;line-height:1.7">${esc(o.notes)}</p>
       </div>` : ''}
   `;
+
+  window._selectedNet = wallets[0]?.network || '';
 }
+
+async function approveQuote(id) {
+  if (!confirm('هل أنت متأكد من الموافقة على السعر؟ سيُطلب منك الدفع بعدها.')) return;
+  try { await api(`/api/orders/${id}/approve-quote`, 'POST'); toast('✅ تمت الموافقة'); renderOrderDetail(id); }
+  catch (e) { toast(e.message, 'error'); }
+}
+window.approveQuote = approveQuote;
+
+async function rejectQuote(id) {
+  if (!confirm('هل أنت متأكد من رفض عرض السعر؟')) return;
+  try { await api(`/api/orders/${id}/reject-quote`, 'POST'); toast('تم الرفض', 'info'); renderOrderDetail(id); }
+  catch (e) { toast(e.message, 'error'); }
+}
+window.rejectQuote = rejectQuote;
+
+async function submitPayment(id) {
+  const tx = document.getElementById('payTx').value.trim();
+  const proof = document.getElementById('payProof').value.trim();
+  if (!tx || tx.length < 6) { toast('رقم التحويل (TxID) مطلوب', 'error'); return; }
+  try {
+    await api(`/api/orders/${id}/submit-payment`, 'POST', {
+      wallet_network: window._selectedNet || '',
+      tx_ref: tx,
+      tx_proof_url: proof
+    });
+    toast('✅ تم إرسال إثبات الدفع — سنؤكد الدفع قريباً');
+    renderOrderDetail(id);
+  } catch (e) { toast(e.message, 'error'); }
+}
+window.submitPayment = submitPayment;
+
+function selectNet(el) {
+  document.querySelectorAll('.net-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  const a = document.getElementById('walletAddr');
+  if (a) a.textContent = el.dataset.addr;
+  window._selectedNet = el.dataset.net;
+}
+window.selectNet = selectNet;
+
+function copyWallet() {
+  const a = document.getElementById('walletAddr')?.textContent || '';
+  navigator.clipboard.writeText(a).then(() => toast('✓ تم نسخ العنوان'));
+}
+window.copyWallet = copyWallet;
 
 // ==================== صفحة الإشعارات ====================
 async function renderNotifications() {
@@ -1039,7 +787,7 @@ function renderRegister() {
       <div class="fg">
         <label>كلمة المرور:</label>
         <input type="password" id="regPw" placeholder="8+ أحرف وأرقام ورموز" oninput="validateLive()">
-        <div class="helper">يجب أن تحتوي على أحرف وأرقام ورموز (مثال: MyPass@123)</div>
+        <div class="helper">مثال: MyPass@123</div>
         <div class="err-msg" id="errPw"></div>
       </div>
       <button class="main-btn" onclick="doRegister()">إنشاء الحساب</button>
@@ -1054,7 +802,7 @@ function validateLive() {
   const eP = document.getElementById('errPhone');
   const eW = document.getElementById('errPw');
   if (email) eE.textContent = /^[a-zA-Z0-9._%+-]+@gmail\.com$/i.test(email) ? '' : 'البريد يجب أن ينتهي بـ @gmail.com'; else eE.textContent = '';
-  if (phone) eP.textContent = /^09\d{8}$/.test(phone) ? '' : 'الهاتف يجب أن يبدأ بـ 09 ويتكون من 10 أرقام'; else eP.textContent = '';
+  if (phone) eP.textContent = /^09\d{8}$/.test(phone) ? '' : 'الهاتف 10 أرقام يبدأ بـ 09'; else eP.textContent = '';
   if (pw) {
     if (pw.length < 8) eW.textContent = 'كلمة المرور 8 أحرف على الأقل';
     else if (!/[A-Za-z]/.test(pw)) eW.textContent = 'يجب أن تحتوي على أحرف';
@@ -1072,7 +820,7 @@ async function doRegister() {
   const password = document.getElementById('regPw').value;
   if (!name || name.split(/\s+/).length < 2) { toast('الاسم الثلاثي مطلوب', 'error'); return; }
   if (!/^[a-zA-Z0-9._%+-]+@gmail\.com$/i.test(email)) { toast('البريد يجب أن ينتهي بـ @gmail.com', 'error'); return; }
-  if (!/^09\d{8}$/.test(phone)) { toast('رقم الهاتف يجب أن يبدأ بـ 09 ويتكون من 10 أرقام', 'error'); return; }
+  if (!/^09\d{8}$/.test(phone)) { toast('رقم الهاتف 10 أرقام يبدأ بـ 09', 'error'); return; }
   if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password) || !/[!@#$%^&*()_\-+=\[\]{};:'",.<>\/?\\|`~]/.test(password)) {
     toast('كلمة المرور: 8+ أحرف وأرقام ورموز', 'error'); return;
   }
@@ -1097,7 +845,6 @@ async function renderAdmin() {
       <div class="atabs">
         <button data-t="ov" onclick="adminTab('ov')">📊 نظرة عامة</button>
         <button data-t="or" onclick="adminTab('or')">🛒 الطلبات</button>
-        <button data-t="pr" onclick="adminTab('pr')">💰 التسعير</button>
         <button data-t="wa" onclick="adminTab('wa')">💳 المحافظ</button>
         <button data-t="st" onclick="adminTab('st')">🏪 المتاجر</button>
         <button data-t="te" onclick="adminTab('te')">⭐ الإثباتات</button>
@@ -1120,7 +867,6 @@ async function adminTab(t) {
   try {
     if (t === 'ov') return adminOverview(c);
     if (t === 'or') return adminOrders(c);
-    if (t === 'pr') return adminPricing(c);
     if (t === 'wa') return adminWallets(c);
     if (t === 'st') return adminStores(c);
     if (t === 'te') return adminTestimonials(c);
@@ -1140,11 +886,11 @@ async function adminOverview(c) {
   c.innerHTML = `
     <div class="stat-grid">
       <div class="stat"><div class="n">${s.total_orders}</div><div class="l">إجمالي الطلبات</div></div>
-      <div class="stat"><div class="n">${s.pending_orders}</div><div class="l">بانتظار الدفع</div></div>
+      <div class="stat"><div class="n">${s.pending_quote}</div><div class="l">طلبات عرض سعر جديدة</div></div>
+      <div class="stat"><div class="n">${s.awaiting_payment}</div><div class="l">بانتظار الدفع</div></div>
       <div class="stat"><div class="n">${s.in_progress}</div><div class="l">قيد التنفيذ</div></div>
       <div class="stat"><div class="n">${s.delivered}</div><div class="l">تم التسليم</div></div>
       <div class="stat"><div class="n">${s.open_support}</div><div class="l">رسائل مفتوحة</div></div>
-      <div class="stat"><div class="n">${s.total_accounts}</div><div class="l">إجمالي الحسابات</div></div>
       <div class="stat"><div class="n">$${fmt(s.total_revenue)}</div><div class="l">الإيرادات</div></div>
     </div>
     <h4 style="margin-bottom:12px;color:#0F172A">📋 آخر 5 طلبات</h4>
@@ -1153,7 +899,7 @@ async function adminOverview(c) {
       ${orders.slice(0, 5).map(o => `<tr>
         <td>${esc(o.order_number)}</td><td>${esc(o.receiver_name)}</td><td>${esc(o.region_name || '-')}</td>
         <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.product_title)}</td>
-        <td>$${fmt(o.admin_adjusted_usd || o.total_usd)}</td>
+        <td>${o.total_usd > 0 ? '$' + fmt(o.total_usd) : '—'}</td>
         <td><span class="status-chip st-${o.status}">${labels[o.status] || o.status}</span></td>
       </tr>`).join('')}
     </table></div>`;
@@ -1169,17 +915,14 @@ async function adminOrders(c) {
       ${orders.map(o => `
         <tr>
           <td style="font-family:monospace;font-size:11px">${esc(o.order_number)}</td>
-          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-            ${o.product_image ? `<img src="${esc(o.product_image)}" style="width:32px;height:32px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-left:6px" onerror="this.style.display='none'">` : ''}
-            ${esc(o.product_title)}
-          </td>
+          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.product_title)}</td>
           <td>${esc(o.receiver_name)}</td>
           <td>${esc(o.receiver_phone)}</td>
           <td>${esc(o.region_name || '-')}</td>
-          <td>$${fmt(o.admin_adjusted_usd || o.total_usd)}</td>
+          <td>${o.total_usd > 0 ? '$' + fmt(o.total_usd) : '—'}</td>
           <td><span class="status-chip st-${o.status}">${labels[o.status] || o.status}</span></td>
           <td>
-            <button class="btn-primary btn-sm" onclick='editOrder(${JSON.stringify(o).replace(/'/g, "&#39;")})'>✏️ تعديل</button>
+            <button class="btn-primary btn-sm" onclick='editOrder(${JSON.stringify(o).replace(/'/g, "&#39;")})'>✏️ فتح</button>
             <button class="btn-red btn-sm" onclick="delOrder(${o.id})">🗑️</button>
           </td>
         </tr>`).join('')}
@@ -1191,52 +934,93 @@ function editOrder(o) {
   const bg = document.createElement('div');
   bg.className = 'modal-bg';
   bg.onclick = e => { if (e.target === bg) bg.remove(); };
-  const currentCustoms = o.admin_customs_usd !== null && o.admin_customs_usd !== undefined ? o.admin_customs_usd : o.customs_usd;
   bg.innerHTML = `
     <div class="modal">
       <button class="modal-close" onclick="this.closest('.modal-bg').remove()">✕</button>
-      <h3>تعديل الطلب ${esc(o.order_number)}</h3>
-      ${o.product_image ? `
-        <div style="display:flex;gap:12px;align-items:center;padding:12px;background:#F8FAFC;border-radius:10px;margin-bottom:14px">
-          <img src="${esc(o.product_image)}" style="width:70px;height:70px;object-fit:cover;border-radius:10px" onerror="this.style.display='none'">
-          <div style="flex:1">
-            <p style="font-weight:700;font-size:13px">${esc(o.product_title)}</p>
-            ${o.selected_size ? `<p class="mini">📏 المقاس: ${esc(o.selected_size)}</p>` : ''}
-            ${o.selected_color ? `<p class="mini">🎨 اللون: ${esc(o.selected_color)}</p>` : ''}
+      <h3>إدارة الطلب ${esc(o.order_number)}</h3>
+
+      <div style="padding:14px;background:#F8FAFC;border-radius:10px;margin-bottom:14px">
+        <p><strong>👤 العميل:</strong> ${esc(o.user_name || '-')} ${o.user_email ? `(${esc(o.user_email)})` : ''} ${o.user_phone ? ` - ${esc(o.user_phone)}` : ''}</p>
+        <p style="margin-top:8px"><strong>📦 المنتج:</strong> ${esc(o.product_title)}</p>
+        <p style="margin-top:8px"><strong>🏪 المتجر:</strong> ${esc(o.store_name || '-')} | <strong>الكمية:</strong> ${o.quantity}</p>
+        <p style="margin-top:8px"><a href="${esc(o.product_url)}" target="_blank" style="font-size:12px">🔗 فتح رابط المنتج</a></p>
+        <p style="margin-top:10px"><strong>📝 طلب الزبون:</strong></p>
+        <p style="color:#475569;font-size:13px;line-height:1.7;margin-top:4px;background:#fff;padding:10px;border-radius:6px">${esc(o.customer_description || '-')}</p>
+      </div>
+
+      <div style="padding:14px;background:#F8FAFC;border-radius:10px;margin-bottom:14px">
+        <p><strong>🚚 بيانات المستلم:</strong></p>
+        <p style="font-size:13px;margin-top:4px">${esc(o.receiver_name)} — ${esc(o.receiver_phone)}</p>
+        <p style="font-size:13px">${esc(o.region_name || '-')} — ${esc(o.full_address)}</p>
+      </div>
+
+      ${o.status === 'pending_quote' ? `
+        <div style="background:#FEF3C7;padding:16px;border-radius:10px;border-right:3px solid #F59E0B;margin-bottom:14px">
+          <p style="font-weight:700;color:#78350F;margin-bottom:12px;font-size:15px">💰 أدخل عرض السعر للزبون</p>
+          <div class="fg"><label>سعر المنتج من المتجر ($):</label>
+            <input type="number" step="0.01" id="q_amazon" placeholder="0.00">
           </div>
-        </div>` : ''}
-      ${o.customer_notes ? `
-        <div class="fg" style="background:#FEF3C7;padding:12px;border-radius:10px;border-right:3px solid #F59E0B">
-          <label style="color:#78350F">📝 ملاحظات العميل:</label>
-          <p style="color:#78350F;font-size:13px;line-height:1.7">${esc(o.customer_notes)}</p>
-        </div>` : ''}
-      <div class="fg"><label>الحالة:</label>
+          <div class="fg"><label>الشحن الدولي ($):</label>
+            <input type="number" step="0.01" id="q_ship" placeholder="0.00" value="0">
+          </div>
+          <div class="fg"><label>الجمارك والخدمة ($):</label>
+            <input type="number" step="0.01" id="q_cust" placeholder="0.00" value="0">
+          </div>
+          <div class="fg"><label>ملاحظة للزبون (اختياري):</label>
+            <textarea id="q_notes" placeholder="مثال: السعر يشمل ضمان سنة، الشحن جوي خلال 3 أسابيع"></textarea>
+          </div>
+          <button class="btn-green" style="width:100%;padding:12px;font-weight:800" onclick="sendQuote(${o.id})">📤 إرسال عرض السعر للزبون</button>
+        </div>
+      ` : ''}
+
+      ${o.admin_quote_price ? `
+        <div style="padding:14px;background:#DBEAFE;border-radius:10px;margin-bottom:14px">
+          <p style="font-weight:700;color:#1E40AF">✅ عرض السعر المُرسل:</p>
+          <p style="font-size:13px;margin-top:6px">المنتج: $${fmt(o.admin_quote_price)} | الشحن: $${fmt(o.admin_quote_shipping)} | الجمارك: $${fmt(o.admin_quote_customs)}</p>
+          <p style="font-size:15px;font-weight:800;color:#1E40AF;margin-top:6px">الإجمالي: $${fmt(o.total_usd)}</p>
+        </div>
+      ` : ''}
+
+      <div class="fg"><label>تغيير الحالة:</label>
         <select id="mo_status">
           ${Object.keys(labels).map(k => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${labels[k]}</option>`).join('')}
         </select>
       </div>
-      <div class="fg" style="background:#FEF3C7;padding:14px;border-radius:10px;border-right:3px solid #F59E0B">
-        <label style="color:#78350F">🏛️ تعديل قيمة الجمارك:</label>
-        <input type="number" step="0.01" id="mo_customs" value="${fmt(currentCustoms)}" placeholder="${fmt(o.customs_usd)}">
-        <p class="mini" style="margin-top:6px;color:#78350F">القيمة الحالية: $${fmt(o.customs_usd)} — عند التعديل سيُعاد حساب الإجمالي تلقائياً.</p>
-      </div>
-      <div class="fg"><label>ملاحظة التتبع (اختياري):</label>
+
+      <div class="fg"><label>ملاحظة التتبع (ستظهر للزبون):</label>
         <input id="mo_note" placeholder="مثال: تم استلام الشحنة في المستودع الخارجي">
       </div>
-      <div class="fg"><label>ملاحظات إدارية (تظهر للعميل):</label>
+
+      <div class="fg"><label>ملاحظات إدارية:</label>
         <textarea id="mo_notes">${esc(o.notes || '')}</textarea>
       </div>
-      <button class="btn-primary" style="width:100%;padding:12px" onclick="saveOrderEdit(${o.id})">💾 حفظ</button>
+
+      <button class="btn-primary" style="width:100%;padding:12px" onclick="saveOrderEdit(${o.id})">💾 حفظ التغييرات</button>
     </div>`;
   document.body.appendChild(bg);
 }
 window.editOrder = editOrder;
 
+async function sendQuote(id) {
+  const body = {
+    amazon_price: parseFloat(document.getElementById('q_amazon').value) || 0,
+    shipping_cost: parseFloat(document.getElementById('q_ship').value) || 0,
+    customs: parseFloat(document.getElementById('q_cust').value) || 0,
+    notes: document.getElementById('q_notes').value.trim()
+  };
+  if (!body.amazon_price || body.amazon_price <= 0) { toast('سعر المنتج مطلوب', 'error'); return; }
+  try {
+    await api(`/api/admin/orders/${id}/send-quote`, 'POST', body);
+    toast('✅ تم إرسال العرض للزبون');
+    document.querySelector('.modal-bg')?.remove();
+    adminTab('or');
+  } catch (e) { toast(e.message, 'error'); }
+}
+window.sendQuote = sendQuote;
+
 async function saveOrderEdit(id) {
-  const customsVal = document.getElementById('mo_customs').value;
   const body = {
     status: document.getElementById('mo_status').value,
-    admin_customs_usd: customsVal ? parseFloat(customsVal) : null,
     tracking_note: document.getElementById('mo_note').value.trim(),
     notes: document.getElementById('mo_notes').value.trim()
   };
@@ -1255,45 +1039,6 @@ async function delOrder(id) {
   catch (e) { toast(e.message, 'error'); }
 }
 window.delOrder = delOrder;
-
-async function adminPricing(c) {
-  const p = await api('/api/admin/pricing');
-  const fields = [
-    ['per_kg_air', '✈️ سعر الكيلو الجوي ($)', '5'],
-    ['per_kg_sea', '🚢 سعر الكيلو البحري ($)', '2'],
-    ['customs_percent', '🏛️ نسبة الجمارك والخدمة (%)', '5'],
-    ['usdt_rate', '💱 سعر صرف USDT مقابل الدولار', '1']
-  ];
-  c.innerHTML = `
-    <h4 style="margin-bottom:16px;color:#0F172A">💰 إعدادات التسعير التلقائي</h4>
-    <div class="afm" style="background:#FEF3C7;border-color:#FCD34D">
-      <p style="color:#78350F;font-weight:700;margin-bottom:14px">📐 المعادلة المعتمدة:</p>
-      <p style="color:#78350F;line-height:1.9;font-size:14px">
-        <strong>الإجمالي</strong> = سعر المنتج + (الوزن المجبور لأعلى عدد صحيح × سعر الكيلو) + (5% جمارك)<br>
-        <strong>التوصيل داخل سوريا:</strong> مجاني دائماً<br>
-        <strong>الوزن:</strong> يُجبَر بـ Math.ceil (مثال: 1.1 كغ → 2 كغ)
-      </p>
-    </div>
-    <div class="afm">
-      ${fields.map(([k, label, def]) => `
-        <div class="fg"><label>${label}:</label>
-          <input type="number" step="0.01" id="pr_${k}" value="${p[k] !== undefined ? p[k] : def}">
-        </div>`).join('')}
-      <button class="btn-primary" onclick="savePricing()">💾 حفظ</button>
-    </div>
-    <p class="mini">💡 التعديلات تنعكس فوراً على حاسبة السعر في الصفحة الرئيسية وصفحة الطلب الجديدة.</p>`;
-}
-async function savePricing() {
-  const keys = ['per_kg_air','per_kg_sea','customs_percent','usdt_rate'];
-  const body = {};
-  keys.forEach(k => body[k] = parseFloat(document.getElementById('pr_' + k).value) || 0);
-  try {
-    await api('/api/admin/pricing', 'PUT', body);
-    state.settings = await api('/api/public/data');
-    toast('✅ تم الحفظ');
-  } catch (e) { toast(e.message, 'error'); }
-}
-window.savePricing = savePricing;
 
 async function adminWallets(c) {
   const list = await api('/api/admin/wallets');
@@ -1562,10 +1307,10 @@ async function adminGeo(c) {
         </div>
         <p class="mini" style="margin-bottom:10px">المحافظ (${cnt.regions.length}):</p>
         <div class="tbl-wrap" style="margin-bottom:10px"><table>
-          <tr><th>ID</th><th>المحافظة</th><th>أجرة التوصيل</th><th>نشط</th><th>إجراءات</th></tr>
+          <tr><th>ID</th><th>المحافظة</th><th>نشط</th><th>إجراءات</th></tr>
           ${cnt.regions.map(r => `
             <tr>
-              <td>${r.id}</td><td>${esc(r.name_ar)}</td><td>$${fmt(r.delivery_fee_usd)}</td>
+              <td>${r.id}</td><td>${esc(r.name_ar)}</td>
               <td>${r.active ? '✅' : '❌'}</td>
               <td>
                 <button class="btn-gray btn-sm" onclick="toggleRegion(${r.id}, ${r.active ? 0 : 1})">${r.active ? 'تعطيل' : 'تفعيل'}</button>
@@ -1575,9 +1320,8 @@ async function adminGeo(c) {
         </table></div>
         <div class="frow">
           <div class="fg"><label>اسم محافظة جديدة:</label><input id="nr_name_${cnt.id}"></div>
-          <div class="fg"><label>أجرة التوصيل:</label><input type="number" step="0.01" id="nr_fee_${cnt.id}" value="0"></div>
+          <div class="fg"><label>&nbsp;</label><button class="btn-green btn-sm" onclick="addRegion(${cnt.id})">➕ إضافة محافظة</button></div>
         </div>
-        <button class="btn-green btn-sm" onclick="addRegion(${cnt.id})">➕ إضافة محافظة</button>
       </div>`).join('')}`;
 }
 async function addGeoCountry() {
@@ -1612,7 +1356,7 @@ async function addRegion(cid) {
   const body = {
     country_id: cid,
     name_ar: document.getElementById('nr_name_' + cid).value.trim(),
-    delivery_fee_usd: parseFloat(document.getElementById('nr_fee_' + cid).value) || 0
+    delivery_fee_usd: 0
   };
   if (!body.name_ar) { toast('الاسم مطلوب', 'error'); return; }
   try { await api('/api/admin/regions', 'POST', body); state.settings = await api('/api/public/data'); toast('✅'); adminTab('ge'); }
