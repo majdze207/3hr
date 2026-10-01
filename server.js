@@ -4,13 +4,24 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ==================== متغيرات البيئة ====================
 const JWT_SECRET = process.env.JWT_SECRET || 'wasalni-dev-secret-change-me';
-const DB_PATH = process.env.DB_PATH || 'wasalni.db';
-const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || 'admin@gmail.com')
-  .split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'admin@gmail.com').toLowerCase().trim();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin@123';
+const ADMIN_PANEL_PATH = process.env.ADMIN_PANEL_PATH || 'panel-secret';
+const WALLET_TRC20 = process.env.WALLET_TRC20 || 'TXYZabcdefghijklmnopqrstuvwxyz123456';
+const WALLET_BEP20 = process.env.WALLET_BEP20 || '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0';
+
+// ==================== مجلد البيانات المحلي ====================
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'wasalni.db');
+console.log('📂 قاعدة البيانات:', DB_PATH);
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
@@ -46,25 +57,13 @@ CREATE TABLE IF NOT EXISTS orders (
   country_id INTEGER, region_id INTEGER,
   receiver_name TEXT NOT NULL, receiver_phone TEXT NOT NULL, full_address TEXT NOT NULL,
   store_name TEXT, product_title TEXT NOT NULL, product_url TEXT NOT NULL,
-  product_image TEXT,
-  customer_description TEXT,
-  quantity INTEGER DEFAULT 1,
-  admin_quote_price REAL,
-  admin_quote_shipping REAL,
-  admin_quote_customs REAL,
-  admin_quote_notes TEXT,
-  quote_sent_at DATETIME,
-  quote_approved_at DATETIME,
-  product_price_usd REAL DEFAULT 0,
-  weight_kg REAL DEFAULT 1,
-  shipping_method TEXT DEFAULT 'air',
-  shipping_cost_usd REAL DEFAULT 0,
-  customs_usd REAL DEFAULT 0,
-  commission_usd REAL DEFAULT 0,
-  delivery_fee_usd REAL DEFAULT 0,
-  total_usd REAL DEFAULT 0,
-  admin_adjusted_usd REAL,
-  admin_customs_usd REAL,
+  product_image TEXT, customer_description TEXT, quantity INTEGER DEFAULT 1,
+  admin_quote_price REAL, admin_quote_shipping REAL, admin_quote_customs REAL,
+  admin_quote_notes TEXT, quote_sent_at DATETIME, quote_approved_at DATETIME,
+  product_price_usd REAL DEFAULT 0, weight_kg REAL DEFAULT 1, shipping_method TEXT DEFAULT 'air',
+  shipping_cost_usd REAL DEFAULT 0, customs_usd REAL DEFAULT 0,
+  commission_usd REAL DEFAULT 0, delivery_fee_usd REAL DEFAULT 0, total_usd REAL DEFAULT 0,
+  admin_adjusted_usd REAL, admin_customs_usd REAL,
   wallet_network TEXT, tx_ref TEXT, tx_proof_url TEXT,
   status TEXT DEFAULT 'pending_quote', notes TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -92,6 +91,11 @@ CREATE TABLE IF NOT EXISTS testimonials (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS content (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS contact_methods (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL, label TEXT NOT NULL, value TEXT NOT NULL,
+  icon TEXT DEFAULT '💬', active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS support_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL, user_name TEXT,
@@ -133,6 +137,7 @@ const STATUS_LABELS = {
 };
 
 function seed() {
+  // ─── الإعدادات ───
   const setP = db.prepare('INSERT OR IGNORE INTO pricing (key, value) VALUES (?, ?)');
   setP.run('per_kg_air', '5');
   setP.run('per_kg_sea', '2');
@@ -145,19 +150,43 @@ function seed() {
   setC.run('hero_title', '🛒 تسوّق من أي متجر عالمي... ونوصلك إلى سوريا');
   setC.run('hero_subtitle', 'الصق رابط المنتج، اكتب طلبك بالتفصيل، ونرسل لك السعر النهائي — دفع بالكريبتو وتوصيل إلى بابك.');
   setC.run('about_text', 'وصلني هي منصة وساطة تسوق ولوجستيات دولية، تتيح لأهلنا في سوريا الشراء من أكبر المتاجر العالمية (Amazon, AliExpress, eBay وغيرها) ودفع المبلغ بالكريبتو USDT، ثم تتبع شحنتهم مرحلة بمرحلة حتى الاستلام في سوريا.');
-  setC.run('terms_text', 'باستخدامك للمنصة فإنك توافق على الشروط والأحكام: أنت مسؤول عن صحة المعلومات المدخلة، ومدة التسليم تتراوح بين 3 إلى 6 أسابيع حسب الوزن والدولة المصدرة وشركة الشحن.');
-  setC.run('refund_text', 'نضمن لك استرجاع كامل المبلغ بالـ USDT في حال عدم وصول الشحنة خلال المدة القصوى المحددة (8 أسابيع)، أو في حال تلف المنتج أثناء الشحن.');
-  setC.run('whatsapp_number', '+963900000000');
-  setC.run('telegram_channel', 'wasalni');
+  setC.run('terms_text', `الشروط والأحكام:
+
+1. المنصة تعمل كوسيط تسوق ولوجستيات، وليست متجراً مباشراً.
+2. العميل مسؤول عن صحة المعلومات المُدخلة (الاسم، العنوان، رقم الهاتف).
+3. مدة التسليم تقديرية: من 3 إلى 6 أسابيع حسب الوزن والدولة المصدرة.
+4. الأسعار المعروضة تقديرية وتُثبَّت نهائياً بعد عرض السعر من الإدارة.
+5. الدفع بالكريبتو USDT فقط (شبكات TRC20 / BEP20).`);
+  setC.run('refund_text', `سياسة الاسترجاع والضمان:
+
+1. في حال عدم وصول الشحنة خلال 8 أسابيع، يتم استرجاع كامل المبلغ بالـ USDT.
+2. في حال تلف المنتج أثناء الشحن، يتم تعويض العميل بقيمته الكاملة.
+3. لا يمكن الاسترجاع في حال كان المنتج مطابقاً للمواصفات ولم يحصل أي ضرر.
+4. طلبات الإلغاء قبل الشراء من المتجر: استرجاع كامل بدون خصومات.
+5. بعد الشراء من المتجر وقبل الشحن: استرجاع بنسبة 70% (استرداد تكلفة الشراء).
+6. بعد الشحن: لا يمكن الإلغاء.`);
+  setC.run('legal_text', `الإشعار القانوني وسياسة الخصوصية:
+
+1. جميع البيانات المُدخلة (الاسم، الهاتف، العنوان) تُستخدم فقط لتنفيذ الطلب ولا يتم مشاركتها مع أي طرف ثالث.
+2. المنصة تحفظ البيانات بأمان ويمكن للعميل طلب حذف حسابه في أي وقت.
+3. التعاملات المالية بالكريبتو غير قابلة للعكس بعد التأكيد، إلا وفقاً لسياسة الاسترجاع.
+4. المنصة لا تتحمل أي مسؤولية عن التأخير الناتج عن إجراءات جمركية أو ظروف قاهرة.
+5. استخدام المنصة يعني الموافقة الكاملة على هذه الشروط.`);
   setC.run('warranty_note', 'ضمان استرجاع كامل للـ USDT عند عدم وصول الشحنة.');
 
-  if (!db.prepare('SELECT id FROM accounts WHERE email = ?').get('admin@gmail.com')) {
-    const hash = bcrypt.hashSync('Admin@123', 10);
+  // ─── حساب الأدمن من متغيرات البيئة ───
+  const existingAdmin = db.prepare('SELECT id FROM accounts WHERE email = ?').get(ADMIN_EMAIL);
+  if (!existingAdmin) {
+    const hash = bcrypt.hashSync(ADMIN_PASSWORD, 10);
     db.prepare('INSERT INTO accounts (email, phone, name, password_hash, is_admin) VALUES (?, ?, ?, ?, 1)')
-      .run('admin@gmail.com', '0900000000', 'مدير وصلني', hash);
-    console.log('✅ الأدمن: admin@gmail.com / Admin@123');
+      .run(ADMIN_EMAIL, '0900000000', 'مدير وصلني', hash);
+    console.log('✅ تم إنشاء حساب الأدمن من متغيرات البيئة:', ADMIN_EMAIL);
+  } else {
+    // تأكد أن هذا الحساب أدمن
+    db.prepare('UPDATE accounts SET is_admin = 1 WHERE email = ?').run(ADMIN_EMAIL);
   }
 
+  // ─── الدول ───
   if (db.prepare('SELECT COUNT(*) c FROM countries').get().c === 0) {
     const ins = db.prepare('INSERT INTO countries (name_ar, name_en, flag, sort_order) VALUES (?, ?, ?, ?)');
     ins.run('سوريا', 'Syria', '🇸🇾', 1);
@@ -173,6 +202,7 @@ function seed() {
     gov.forEach(name => ins.run(syria.id, name, 0));
   }
 
+  // ─── المتاجر ───
   if (db.prepare('SELECT COUNT(*) c FROM stores').get().c === 0) {
     const ins = db.prepare('INSERT INTO stores (name_ar, name_en, icon, url_hint, sort_order) VALUES (?, ?, ?, ?, ?)');
     ins.run('أمازون', 'Amazon', '🅰️', 'amazon.com', 1);
@@ -182,18 +212,26 @@ function seed() {
     ins.run('متجر مخصص', 'Custom', '🌐', '', 5);
   }
 
+  // ─── المحافظ من متغيرات البيئة ───
   if (db.prepare('SELECT COUNT(*) c FROM wallets').get().c === 0) {
     const ins = db.prepare('INSERT INTO wallets (network, address, sort_order) VALUES (?, ?, ?)');
-    ins.run('TRC20', 'TXYZabcdefghijklmnopqrstuvwxyz123456', 1);
-    ins.run('BEP20', '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0', 2);
+    ins.run('TRC20', WALLET_TRC20, 1);
+    ins.run('BEP20', WALLET_BEP20, 2);
+    console.log('✅ تم إدخال المحافظ من متغيرات البيئة');
   }
 
+  // ─── طرق التواصل الافتراضية ───
+  if (db.prepare('SELECT COUNT(*) c FROM contact_methods').get().c === 0) {
+    const ins = db.prepare('INSERT INTO contact_methods (type, label, value, icon, sort_order) VALUES (?, ?, ?, ?, ?)');
+    ins.run('whatsapp', 'واتساب الأعمال', '+963900000000', '📱', 1);
+    ins.run('telegram', 'قناة تلغرام', 'wasalni', '✈️', 2);
+  }
+
+  // ─── إثباتات التسليم ───
   if (db.prepare('SELECT COUNT(*) c FROM testimonials').get().c === 0) {
     const ins = db.prepare('INSERT INTO testimonials (customer_name, title, description, image_url) VALUES (?, ?, ?, ?)');
-    ins.run('أحمد من دمشق', 'آيفون 15 برو', 'وصلني الجهاز بأسبوعين فقط، مغلق وبتغليف أصلي. تجربة ممتازة.', 'https://images.unsplash.com/photo-1592286927505-1def25115558?w=400');
-    ins.run('سارة من حلب', 'لابتوب ماك بوك', 'وصل اللابتوب بحالة ممتازة، فريق وصلني محترف جداً في التعامل والرد.', 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=400');
-    ins.run('محمد من اللاذقية', 'ساعة أبل', 'الشحنة وصلت خلال 3 أسابيع، والسعر أقل من المتوقع. أنصح الجميع.', 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=400');
-    ins.run('رنا من حمص', 'كاميرا كانون', 'أفضل خدمة شحن جربتها، تتبع دقيق وشفافية كاملة بالأسعار.', 'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=400');
+    ins.run('أحمد من دمشق', 'آيفون 15 برو', 'وصلني الجهاز بأسبوعين فقط، مغلق وبتغليف أصلي.', 'https://images.unsplash.com/photo-1592286927505-1def25115558?w=400');
+    ins.run('سارة من حلب', 'لابتوب ماك بوك', 'وصل اللابتوب بحالة ممتازة، فريق وصلني محترف.', 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=400');
   }
 }
 seed();
@@ -231,7 +269,7 @@ app.post('/api/auth/register', (req, res) => {
   if (!password || !RE_PASSWORD.test(password)) return res.status(400).json({ detail: 'كلمة المرور: 8+ أحرف وأرقام ورموز' });
   try {
     const hash = bcrypt.hashSync(password, 10);
-    const isAdmin = ADMIN_EMAILS.includes(email.toLowerCase().trim()) ? 1 : 0;
+    const isAdmin = (email.toLowerCase().trim() === ADMIN_EMAIL) ? 1 : 0;
     const r = db.prepare('INSERT INTO accounts (email, phone, name, password_hash, is_admin) VALUES (?, ?, ?, ?, ?)')
       .run(email.toLowerCase(), phone, name.trim(), hash, isAdmin);
     const u = db.prepare('SELECT id, email, phone, name, is_admin FROM accounts WHERE id = ?').get(r.lastInsertRowid);
@@ -257,8 +295,15 @@ app.post('/api/auth/login', (req, res) => {
   res.json({ token, user: { id: u.id, email: u.email, phone: u.phone, name: u.name, is_admin: u.is_admin } });
 });
 
-app.get('/api/auth/me', auth, (req, res) => res.json({ user: req.user }));
+app.get('/api/auth/me', auth, (req, res) => {
+  const user = { ...req.user };
+  if (user.is_admin) {
+    user.admin_path = ADMIN_PANEL_PATH;
+  }
+  res.json({ user });
+});
 
+// ==================== البيانات العامة ====================
 app.get('/api/public/data', (req, res) => {
   const content = {}; db.prepare('SELECT * FROM content').all().forEach(r => content[r.key] = r.value);
   const pricing = {}; db.prepare('SELECT * FROM pricing').all().forEach(r => pricing[r.key] = parseFloat(r.value) || 0);
@@ -267,7 +312,8 @@ app.get('/api/public/data', (req, res) => {
   const stores = db.prepare('SELECT * FROM stores WHERE active = 1 ORDER BY sort_order').all();
   const wallets = db.prepare('SELECT * FROM wallets WHERE active = 1 ORDER BY sort_order').all();
   const testimonials = db.prepare('SELECT * FROM testimonials WHERE active = 1 ORDER BY sort_order, id DESC').all();
-  res.json({ content, pricing, countries, regions, stores, wallets, testimonials, status_labels: STATUS_LABELS });
+  const contactMethods = db.prepare('SELECT * FROM contact_methods WHERE active = 1 ORDER BY sort_order').all();
+  res.json({ content, pricing, countries, regions, stores, wallets, testimonials, contact_methods: contactMethods, status_labels: STATUS_LABELS });
 });
 
 // ==================== الطلبات ====================
@@ -279,11 +325,8 @@ function genOrderNumber() {
 }
 
 app.post('/api/orders', auth, (req, res) => {
-  const {
-    region_id, receiver_name, receiver_phone, full_address,
-    store_name, product_title, product_url, customer_description,
-    quantity = 1
-  } = req.body;
+  const { region_id, receiver_name, receiver_phone, full_address,
+    store_name, product_title, product_url, customer_description, quantity = 1 } = req.body;
 
   if (!receiver_name || receiver_name.trim().split(/\s+/).length < 3)
     return res.status(400).json({ detail: 'الاسم الثلاثي للمستلم مطلوب' });
@@ -309,16 +352,13 @@ app.post('/api/orders', auth, (req, res) => {
      receiver_name, receiver_phone, full_address,
      store_name, product_title, product_url, customer_description, quantity,
      product_price_usd, weight_kg, shipping_method,
-     shipping_cost_usd, customs_usd, commission_usd, delivery_fee_usd, total_usd,
-     status)
+     shipping_cost_usd, customs_usd, commission_usd, delivery_fee_usd, total_usd, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(
-      orderNumber, req.user.id, userName, country ? country.id : null, region.id,
+    .run(orderNumber, req.user.id, userName, country ? country.id : null, region.id,
       receiver_name.trim(), receiver_phone, full_address.trim(),
       store_name || '', product_title.trim(), product_url.trim(),
       customer_description.trim(), Math.max(1, parseInt(quantity)),
-      0, 1, 'air', 0, 0, 0, 0, 0, 'pending_quote'
-    );
+      0, 1, 'air', 0, 0, 0, 0, 0, 'pending_quote');
 
   const orderId = r.lastInsertRowid;
   db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
@@ -331,8 +371,7 @@ app.post('/api/orders', auth, (req, res) => {
 
 app.get('/api/orders/mine', auth, (req, res) => {
   const orders = db.prepare(`SELECT o.*, r.name_ar as region_name, c.name_ar as country_name
-    FROM orders o
-    LEFT JOIN regions r ON o.region_id = r.id
+    FROM orders o LEFT JOIN regions r ON o.region_id = r.id
     LEFT JOIN countries c ON o.country_id = c.id
     WHERE o.user_id = ? ORDER BY o.created_at DESC`).all(req.user.id);
   orders.forEach(o => { o.tracking = db.prepare('SELECT * FROM order_tracking WHERE order_id = ? ORDER BY created_at ASC').all(o.id); });
@@ -341,10 +380,8 @@ app.get('/api/orders/mine', auth, (req, res) => {
 
 app.get('/api/orders/:id', auth, (req, res) => {
   const o = db.prepare(`SELECT o.*, r.name_ar as region_name, c.name_ar as country_name
-    FROM orders o
-    LEFT JOIN regions r ON o.region_id = r.id
-    LEFT JOIN countries c ON o.country_id = c.id
-    WHERE o.id = ?`).get(req.params.id);
+    FROM orders o LEFT JOIN regions r ON o.region_id = r.id
+    LEFT JOIN countries c ON o.country_id = c.id WHERE o.id = ?`).get(req.params.id);
   if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
   if (o.user_id !== req.user.id && !req.user.is_admin) return res.status(403).json({ detail: 'غير مصرح' });
   o.tracking = db.prepare('SELECT * FROM order_tracking WHERE order_id = ? ORDER BY created_at ASC').all(o.id);
@@ -355,16 +392,11 @@ app.post('/api/orders/:id/approve-quote', auth, (req, res) => {
   const o = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
   if (o.status !== 'quote_sent') return res.status(400).json({ detail: 'لا يوجد عرض سعر للموافقة' });
-
-  db.prepare(`UPDATE orders SET status = 'awaiting_payment',
-    quote_approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?`).run(o.id);
-
+  db.prepare(`UPDATE orders SET status = 'awaiting_payment', quote_approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(o.id);
   db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
     .run(o.id, 'awaiting_payment', 'وافقت على عرض السعر — بانتظار الدفع');
   db.prepare('INSERT INTO notifications (user_id, order_id, title, body) VALUES (?, ?, ?, ?)')
     .run(o.user_id, o.id, '✅ وافقت على السعر', `الرجاء تحويل $${o.total_usd.toFixed(2)} USDT لإتمام الطلب`);
-
   res.json({ success: true });
 });
 
@@ -372,7 +404,6 @@ app.post('/api/orders/:id/reject-quote', auth, (req, res) => {
   const o = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
   if (o.status !== 'quote_sent') return res.status(400).json({ detail: 'لا يوجد عرض سعر' });
-
   db.prepare(`UPDATE orders SET status = 'quote_rejected', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(o.id);
   db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
     .run(o.id, 'quote_rejected', 'رفض الزبون عرض السعر');
@@ -415,6 +446,11 @@ app.get('/api/support/mine', auth, (req, res) => {
   res.json(db.prepare('SELECT * FROM support_messages WHERE user_id = ? ORDER BY created_at ASC').all(req.user.id));
 });
 
+// ==================== طرق التواصل (عام) ====================
+app.get('/api/contact-methods', (req, res) => {
+  res.json(db.prepare('SELECT * FROM contact_methods WHERE active = 1 ORDER BY sort_order').all());
+});
+
 // ==================== الأدمن ====================
 app.get('/api/admin/stats', auth, adminOnly, (req, res) => {
   res.json({
@@ -431,10 +467,8 @@ app.get('/api/admin/stats', auth, adminOnly, (req, res) => {
 
 app.get('/api/admin/orders', auth, adminOnly, (req, res) => {
   const orders = db.prepare(`SELECT o.*, r.name_ar as region_name, u.email as user_email, u.phone as user_phone
-    FROM orders o
-    LEFT JOIN regions r ON o.region_id = r.id
-    LEFT JOIN accounts u ON o.user_id = u.id
-    ORDER BY o.created_at DESC`).all();
+    FROM orders o LEFT JOIN regions r ON o.region_id = r.id
+    LEFT JOIN accounts u ON o.user_id = u.id ORDER BY o.created_at DESC`).all();
   orders.forEach(o => { o.tracking = db.prepare('SELECT * FROM order_tracking WHERE order_id = ? ORDER BY created_at ASC').all(o.id); });
   res.json(orders);
 });
@@ -443,23 +477,18 @@ app.post('/api/admin/orders/:id/send-quote', auth, adminOnly, (req, res) => {
   const { amazon_price, shipping_cost, customs, notes } = req.body;
   const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
-
   const ap = parseFloat(amazon_price) || 0;
   const sc = parseFloat(shipping_cost) || 0;
   const cu = parseFloat(customs) || 0;
   const total = ap + sc + cu;
-
-  db.prepare(`UPDATE orders SET
-    admin_quote_price = ?, admin_quote_shipping = ?, admin_quote_customs = ?,
+  db.prepare(`UPDATE orders SET admin_quote_price = ?, admin_quote_shipping = ?, admin_quote_customs = ?,
     admin_quote_notes = ?, total_usd = ?, status = 'quote_sent',
-    quote_sent_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?`).run(ap, sc, cu, notes || '', +total.toFixed(2), req.params.id);
-
+    quote_sent_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+    .run(ap, sc, cu, notes || '', +total.toFixed(2), req.params.id);
   db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
     .run(o.id, 'quote_sent', `تم إرسال عرض السعر: $${total.toFixed(2)}`);
   db.prepare('INSERT INTO notifications (user_id, order_id, title, body) VALUES (?, ?, ?, ?)')
     .run(o.user_id, o.id, '💰 وصل عرض السعر', `طلبك #${o.order_number}: الإجمالي $${total.toFixed(2)} USDT`);
-
   res.json({ success: true, total });
 });
 
@@ -468,19 +497,15 @@ app.put('/api/admin/orders/:id', auth, adminOnly, (req, res) => {
   const o = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!o) return res.status(404).json({ detail: 'الطلب غير موجود' });
   if (status && !STATUS_LABELS[status]) return res.status(400).json({ detail: 'حالة غير صحيحة' });
-
   const newNotes = notes !== undefined ? notes : o.notes;
-
   db.prepare(`UPDATE orders SET status = COALESCE(?, status), notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
     .run(status || null, newNotes, req.params.id);
-
   if (status && status !== o.status) {
     db.prepare('INSERT INTO order_tracking (order_id, status, note) VALUES (?, ?, ?)')
       .run(o.id, status, tracking_note || STATUS_LABELS[status]);
     db.prepare('INSERT INTO notifications (user_id, order_id, title, body) VALUES (?, ?, ?, ?)')
       .run(o.user_id, o.id, 'تحديث حالة الطلب', `طلبك #${o.order_number}: ${STATUS_LABELS[status]}`);
   }
-
   res.json({ success: true });
 });
 
@@ -510,12 +535,33 @@ app.delete('/api/admin/wallets/:id', auth, adminOnly, (req, res) => {
   res.json({ success: true });
 });
 
+app.get('/api/admin/contact-methods', auth, adminOnly, (req, res) => {
+  res.json(db.prepare('SELECT * FROM contact_methods ORDER BY sort_order').all());
+});
+app.post('/api/admin/contact-methods', auth, adminOnly, (req, res) => {
+  const { type, label, value, icon, sort_order } = req.body;
+  if (!type || !label || !value) return res.status(400).json({ detail: 'النوع والاسم والقيمة مطلوبة' });
+  const r = db.prepare('INSERT INTO contact_methods (type, label, value, icon, sort_order) VALUES (?, ?, ?, ?, ?)')
+    .run(type, label, value, icon || '💬', sort_order || 0);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/contact-methods/:id', auth, adminOnly, (req, res) => {
+  const { type, label, value, icon, active, sort_order } = req.body;
+  db.prepare('UPDATE contact_methods SET type=?, label=?, value=?, icon=?, active=?, sort_order=? WHERE id=?')
+    .run(type, label, value, icon, active ? 1 : 0, sort_order || 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/contact-methods/:id', auth, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM contact_methods WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
 app.get('/api/admin/stores', auth, adminOnly, (req, res) => {
   res.json(db.prepare('SELECT * FROM stores ORDER BY sort_order').all());
 });
 app.post('/api/admin/stores', auth, adminOnly, (req, res) => {
   const { name_ar, name_en, icon, url_hint, sort_order } = req.body;
-  if (!name_ar || !name_en) return res.status(400).json({ detail: 'الاسم العربي والإنجليزي مطلوبان' });
+  if (!name_ar || !name_en) return res.status(400).json({ detail: 'الاسم مطلوب' });
   const r = db.prepare('INSERT INTO stores (name_ar, name_en, icon, url_hint, sort_order) VALUES (?, ?, ?, ?, ?)')
     .run(name_ar, name_en, icon || '🛒', url_hint || '', sort_order || 0);
   res.json({ success: true, id: r.lastInsertRowid });
@@ -586,16 +632,16 @@ app.delete('/api/admin/countries/:id', auth, adminOnly, (req, res) => {
 });
 
 app.post('/api/admin/regions', auth, adminOnly, (req, res) => {
-  const { country_id, name_ar, delivery_fee_usd } = req.body;
+  const { country_id, name_ar } = req.body;
   if (!country_id || !name_ar) return res.status(400).json({ detail: 'الدولة والاسم مطلوبان' });
-  const r = db.prepare('INSERT INTO regions (country_id, name_ar, delivery_fee_usd) VALUES (?, ?, ?)')
-    .run(country_id, name_ar, delivery_fee_usd || 0);
+  const r = db.prepare('INSERT INTO regions (country_id, name_ar, delivery_fee_usd) VALUES (?, ?, 0)')
+    .run(country_id, name_ar);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 app.put('/api/admin/regions/:id', auth, adminOnly, (req, res) => {
-  const { name_ar, delivery_fee_usd, active } = req.body;
-  db.prepare('UPDATE regions SET name_ar=?, delivery_fee_usd=?, active=? WHERE id=?')
-    .run(name_ar, delivery_fee_usd, active ? 1 : 0, req.params.id);
+  const { name_ar, active } = req.body;
+  db.prepare('UPDATE regions SET name_ar=?, active=? WHERE id=?')
+    .run(name_ar, active ? 1 : 0, req.params.id);
   res.json({ success: true });
 });
 app.delete('/api/admin/regions/:id', auth, adminOnly, (req, res) => {
@@ -618,8 +664,7 @@ app.delete('/api/admin/accounts/:id', auth, adminOnly, (req, res) => {
 
 app.get('/api/admin/support', auth, adminOnly, (req, res) => {
   res.json(db.prepare(`SELECT s.*, a.email as user_email, a.phone as user_phone
-    FROM support_messages s JOIN accounts a ON s.user_id = a.id
-    ORDER BY s.created_at DESC`).all());
+    FROM support_messages s JOIN accounts a ON s.user_id = a.id ORDER BY s.created_at DESC`).all());
 });
 app.post('/api/admin/support/:id/reply', auth, adminOnly, (req, res) => {
   const { reply } = req.body;
@@ -644,6 +689,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('\n════════════════════════════════════════');
   console.log('   📦  وصلني — منصة الوساطة اللوجستية');
   console.log('   🌐  http://localhost:' + PORT);
-  console.log('   👤  admin@gmail.com  /  Admin@123');
+  console.log('   👤  الأدمن: ' + ADMIN_EMAIL);
+  console.log('   🔐  مسار الأدمن السري: /' + ADMIN_PANEL_PATH);
+  console.log('   📂  قاعدة البيانات: ' + DB_PATH);
   console.log('════════════════════════════════════════\n');
 });
