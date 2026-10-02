@@ -260,31 +260,8 @@ async function seed() {
     }
   } catch (e) { console.log('⚠️ المحافظ:', e.message); }
 
-  // طرق التواصل
-  try {
-    const cmCount = (await get('SELECT COUNT(*) as c FROM contact_methods')).c;
-    if (cmCount === 0) {
-      await run('INSERT INTO contact_methods (type, label, value, icon, sort_order) VALUES (?, ?, ?, ?, ?)',
-        ['whatsapp', 'واتساب الأعمال', '+963900000000', '📱', 1]);
-      await run('INSERT INTO contact_methods (type, label, value, icon, sort_order) VALUES (?, ?, ?, ?, ?)',
-        ['telegram', 'قناة تلغرام', 'wasalni', '✈️', 2]);
-    }
-  } catch (e) { console.log('⚠️ التواصل:', e.message); }
-
-  // إثباتات التسليم
-  try {
-    const tCount = (await get('SELECT COUNT(*) as c FROM testimonials')).c;
-    if (tCount === 0) {
-      const testi = [
-        ['أحمد من دمشق', 'آيفون 15 برو', 'وصلني الجهاز بأسبوعين فقط، مغلق وبتغليف أصلي.', 'https://images.unsplash.com/photo-1592286927505-1def25115558?w=400'],
-        ['سارة من حلب', 'لابتوب ماك بوك', 'وصل اللابتوب بحالة ممتازة، فريق وصلني محترف.', 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=400']
-      ];
-      for (const [name, title, desc, img] of testi) {
-        await run('INSERT INTO testimonials (customer_name, title, description, image_url) VALUES (?, ?, ?, ?)',
-          [name, title, desc, img]);
-      }
-    }
-  } catch (e) { console.log('⚠️ الإثباتات:', e.message); }
+  // ⚠️ تم إزالة قسم طرق التواصل الافتراضية - تُضاف من لوحة الأدمن فقط
+  // ⚠️ تم إزالة قسم الإثباتات الافتراضية - تُضاف من لوحة الأدمن فقط
 
   console.log('✅ Seed اكتمل');
 }
