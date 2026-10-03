@@ -31,17 +31,9 @@ if (TURSO_URL && TURSO_TOKEN) {
 }
 
 // ==================== Helpers ====================
-async function run(sql, args = []) {
-  return await db.execute({ sql, args });
-}
-async function get(sql, args = []) {
-  const r = await db.execute({ sql, args });
-  return r.rows[0] || null;
-}
-async function all(sql, args = []) {
-  const r = await db.execute({ sql, args });
-  return r.rows || [];
-}
+async function run(sql, args = []) { return await db.execute({ sql, args }); }
+async function get(sql, args = []) { const r = await db.execute({ sql, args }); return r.rows[0] || null; }
+async function all(sql, args = []) { const r = await db.execute({ sql, args }); return r.rows || []; }
 
 // ==================== إنشاء الجداول ====================
 async function initDb() {
@@ -64,8 +56,9 @@ async function initDb() {
     )`,
     `CREATE TABLE IF NOT EXISTS stores (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name_ar TEXT NOT NULL, name_en TEXT NOT NULL, icon TEXT DEFAULT '🛒',
-      url_hint TEXT DEFAULT '', active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0
+      name_ar TEXT NOT NULL, name_en TEXT DEFAULT '', icon TEXT DEFAULT '🛒',
+      description TEXT DEFAULT '', link_url TEXT DEFAULT '', url_hint TEXT DEFAULT '',
+      active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0
     )`,
     `CREATE TABLE IF NOT EXISTS orders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,11 +97,6 @@ async function initDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`,
     `CREATE TABLE IF NOT EXISTS content (key TEXT PRIMARY KEY, value TEXT)`,
-    `CREATE TABLE IF NOT EXISTS contact_methods (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      type TEXT NOT NULL, label TEXT NOT NULL, value TEXT NOT NULL,
-      icon TEXT DEFAULT '💬', active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0
-    )`,
     `CREATE TABLE IF NOT EXISTS support_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL, user_name TEXT,
@@ -127,8 +115,10 @@ async function initDb() {
     try { await db.execute(sql); } catch (e) { console.log('⚠️ جدول:', e.message); }
   }
 
-  // ترحيلات (ALTER TABLE)
+  // ترحيلات (ALTER TABLE) — لجدول stores لو ما كان فيه الأعمدة الجديدة
   const migrations = [
+    `ALTER TABLE stores ADD COLUMN description TEXT DEFAULT ''`,
+    `ALTER TABLE stores ADD COLUMN link_url TEXT DEFAULT ''`,
     'ALTER TABLE orders ADD COLUMN customer_description TEXT',
     'ALTER TABLE orders ADD COLUMN admin_quote_price REAL',
     'ALTER TABLE orders ADD COLUMN admin_quote_shipping REAL',
@@ -233,24 +223,7 @@ async function seed() {
     }
   } catch (e) { console.log('⚠️ المحافظ:', e.message); }
 
-  // المتاجر
-  try {
-    const sCount = (await get('SELECT COUNT(*) as c FROM stores')).c;
-    if (sCount === 0) {
-      const stores = [
-        ['أمازون', 'Amazon', '🅰️', 'amazon.com', 1],
-        ['علي إكسبريس', 'AliExpress', '🅰️', 'aliexpress.com', 2],
-        ['إي باي', 'eBay', '🅴', 'ebay.com', 3],
-        ['وول مارت', 'Walmart', '🆆', 'walmart.com', 4],
-        ['متجر مخصص', 'Custom', '🌐', '', 5]
-      ];
-      for (const [ar, en, ic, hint, so] of stores) {
-        await run('INSERT INTO stores (name_ar, name_en, icon, url_hint, sort_order) VALUES (?, ?, ?, ?, ?)', [ar, en, ic, hint, so]);
-      }
-    }
-  } catch (e) { console.log('⚠️ المتاجر:', e.message); }
-
-  // المحافظ
+  // المحافظ (Wallets)
   try {
     const wCount = (await get('SELECT COUNT(*) as c FROM wallets')).c;
     if (wCount === 0) {
@@ -260,8 +233,10 @@ async function seed() {
     }
   } catch (e) { console.log('⚠️ المحافظ:', e.message); }
 
-  // ⚠️ تم إزالة قسم طرق التواصل الافتراضية - تُضاف من لوحة الأدمن فقط
-  // ⚠️ تم إزالة قسم الإثباتات الافتراضية - تُضاف من لوحة الأدمن فقط
+  // ⚠️ ملاحظات مهمة:
+  // - لا يتم إضافة المتاجر المدعومة افتراضياً (تُضاف من لوحة الأدمن)
+  // - لا يتم إضافة طرق التواصل (تم حذفها نهائياً)
+  // - لا يتم إضافة إثباتات افتراضية (تُضاف من لوحة الأدمن)
 
   console.log('✅ Seed اكتمل');
 }
@@ -354,9 +329,8 @@ app.get('/api/public/data', async (req, res) => {
     const stores = await all('SELECT * FROM stores WHERE active = 1 ORDER BY sort_order');
     const wallets = await all('SELECT * FROM wallets WHERE active = 1 ORDER BY sort_order');
     const testimonials = await all('SELECT * FROM testimonials WHERE active = 1 ORDER BY sort_order, id DESC');
-    const contact_methods = await all('SELECT * FROM contact_methods WHERE active = 1 ORDER BY sort_order');
 
-    res.json({ content, pricing, countries, regions, stores, wallets, testimonials, contact_methods, status_labels: STATUS_LABELS });
+    res.json({ content, pricing, countries, regions, stores, wallets, testimonials, status_labels: STATUS_LABELS });
   } catch (e) { res.status(500).json({ detail: e.message }); }
 });
 
@@ -523,13 +497,6 @@ app.get('/api/support/mine', auth, async (req, res) => {
   } catch (e) { res.status(500).json({ detail: e.message }); }
 });
 
-app.get('/api/contact-methods', async (req, res) => {
-  try {
-    const list = await all('SELECT * FROM contact_methods WHERE active = 1 ORDER BY sort_order');
-    res.json(list);
-  } catch (e) { res.status(500).json({ detail: e.message }); }
-});
-
 // ==================== الأدمن ====================
 app.get('/api/admin/stats', auth, adminOnly, async (req, res) => {
   try {
@@ -639,52 +606,29 @@ app.delete('/api/admin/wallets/:id', auth, adminOnly, async (req, res) => {
   catch (e) { res.status(500).json({ detail: e.message }); }
 });
 
-// ==================== طرق التواصل ====================
-app.get('/api/admin/contact-methods', auth, adminOnly, async (req, res) => {
-  try { res.json(await all('SELECT * FROM contact_methods ORDER BY sort_order')); }
-  catch (e) { res.status(500).json({ detail: e.message }); }
-});
-app.post('/api/admin/contact-methods', auth, adminOnly, async (req, res) => {
-  const { type, label, value, icon, sort_order } = req.body;
-  if (!type || !label || !value) return res.status(400).json({ detail: 'النوع والاسم والقيمة مطلوبة' });
-  try {
-    const r = await run('INSERT INTO contact_methods (type, label, value, icon, sort_order) VALUES (?, ?, ?, ?, ?)',
-      [type, label, value, icon || '💬', sort_order || 0]);
-    res.json({ success: true, id: r.lastInsertRowid });
-  } catch (e) { res.status(500).json({ detail: e.message }); }
-});
-app.put('/api/admin/contact-methods/:id', auth, adminOnly, async (req, res) => {
-  const { type, label, value, icon, active, sort_order } = req.body;
-  try {
-    await run('UPDATE contact_methods SET type=?, label=?, value=?, icon=?, active=?, sort_order=? WHERE id=?',
-      [type, label, value, icon, active ? 1 : 0, sort_order || 0, req.params.id]);
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ detail: e.message }); }
-});
-app.delete('/api/admin/contact-methods/:id', auth, adminOnly, async (req, res) => {
-  try { await run('DELETE FROM contact_methods WHERE id = ?', [req.params.id]); res.json({ success: true }); }
-  catch (e) { res.status(500).json({ detail: e.message }); }
-});
-
-// ==================== المتاجر ====================
+// ==================== المتاجر المدعومة ====================
 app.get('/api/admin/stores', auth, adminOnly, async (req, res) => {
-  try { res.json(await all('SELECT * FROM stores ORDER BY sort_order')); }
+  try { res.json(await all('SELECT * FROM stores ORDER BY sort_order, id')); }
   catch (e) { res.status(500).json({ detail: e.message }); }
 });
 app.post('/api/admin/stores', auth, adminOnly, async (req, res) => {
-  const { name_ar, name_en, icon, url_hint, sort_order } = req.body;
-  if (!name_ar || !name_en) return res.status(400).json({ detail: 'الاسم مطلوب' });
+  const { name_ar, name_en, icon, description, link_url, url_hint, sort_order } = req.body;
+  if (!name_ar) return res.status(400).json({ detail: 'اسم المتجر مطلوب' });
   try {
-    const r = await run('INSERT INTO stores (name_ar, name_en, icon, url_hint, sort_order) VALUES (?, ?, ?, ?, ?)',
-      [name_ar, name_en, icon || '🛒', url_hint || '', sort_order || 0]);
+    const r = await run(
+      'INSERT INTO stores (name_ar, name_en, icon, description, link_url, url_hint, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [name_ar, name_en || '', icon || '🛒', description || '', link_url || '', url_hint || '', sort_order || 0]
+    );
     res.json({ success: true, id: r.lastInsertRowid });
   } catch (e) { res.status(500).json({ detail: e.message }); }
 });
 app.put('/api/admin/stores/:id', auth, adminOnly, async (req, res) => {
-  const { name_ar, name_en, icon, url_hint, active, sort_order } = req.body;
+  const { name_ar, name_en, icon, description, link_url, url_hint, active, sort_order } = req.body;
   try {
-    await run('UPDATE stores SET name_ar=?, name_en=?, icon=?, url_hint=?, active=?, sort_order=? WHERE id=?',
-      [name_ar, name_en, icon, url_hint, active ? 1 : 0, sort_order || 0, req.params.id]);
+    await run(
+      'UPDATE stores SET name_ar=?, name_en=?, icon=?, description=?, link_url=?, url_hint=?, active=?, sort_order=? WHERE id=?',
+      [name_ar, name_en, icon, description, link_url, url_hint, active ? 1 : 0, sort_order || 0, req.params.id]
+    );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ detail: e.message }); }
 });
