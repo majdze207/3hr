@@ -64,7 +64,6 @@ function renderHeader() {
     <span data-nav="/help" onclick="navigate('/help')">مركز المساعدة</span>
   </div>`;
 
-  // زر الأدمن يستخدم مسار سري
   const adminBtn = (u && u.is_admin && u.admin_path)
     ? `<button class="hdr-btn" onclick="navigate('/${esc(u.admin_path)}')">⚙️ الإدارة</button>`
     : '';
@@ -98,7 +97,6 @@ function renderHeader() {
 // ==================== الفوتر ====================
 function renderFooter() {
   const c = state.settings.content || {};
-  const contacts = state.settings.contact_methods || [];
   document.getElementById('footer').innerHTML = `
     ${flagSVG()}
     <h3>${esc(c.site_name || 'وصلني')}</h3>
@@ -109,17 +107,6 @@ function renderFooter() {
       <a onclick="navigate('/testimonials')">إثباتات التسليم</a>
       <a onclick="navigate('/legal')">الشروط والسياسات</a>
       <a onclick="navigate('/help')">مركز المساعدة</a>
-    </div>
-    <div class="social">
-      ${contacts.map(cm => {
-        let href = '#';
-        if (cm.type === 'whatsapp') href = 'https://wa.me/' + cm.value.replace(/[^0-9]/g, '');
-        else if (cm.type === 'telegram') href = 'https://t.me/' + cm.value.replace(/^@/, '');
-        else if (cm.type === 'email') href = 'mailto:' + cm.value;
-        else if (cm.type === 'link') href = cm.value;
-        else if (cm.type === 'phone') href = 'tel:' + cm.value;
-        return `<a href="${esc(href)}" target="_blank">${cm.icon} ${esc(cm.label)}</a>`;
-      }).join('')}
     </div>
     <p style="margin-top:20px">© ${new Date().getFullYear()} ${esc(c.site_name || 'وصلني')} — جميع الحقوق محفوظة</p>`;
 }
@@ -175,15 +162,18 @@ async function renderHome() {
       <div class="feat"><div class="ic">🛡️</div><h4>ضمان استرجاع</h4><p>استرجاع كامل بالـ USDT عند التأخر</p></div>
     </div>
 
-    <div class="sec-title"><h2>🌍 المتاجر المدعومة</h2></div>
-    <div class="stores-grid">
-      ${stores.map(s => `
-        <div class="store-card">
-          <div class="ic">${s.icon || '🛒'}</div>
-          <h4>${esc(s.name_ar)}</h4>
-          <p>${esc(s.url_hint || s.name_en)}</p>
-        </div>`).join('')}
-    </div>
+    ${stores.length ? `
+      <div class="sec-title"><h2>🌍 المتاجر المدعومة</h2></div>
+      <div class="stores-grid">
+        ${stores.map(s => `
+          <div class="store-card">
+            <div class="ic">${s.icon || '🛒'}</div>
+            <h4>${esc(s.name_ar)}</h4>
+            ${s.description ? `<p style="font-size:12px;color:#64748B;line-height:1.5;margin-top:6px">${esc(s.description.slice(0, 80))}${s.description.length > 80 ? '...' : ''}</p>` : ''}
+            ${s.link_url ? `<p style="direction:ltr;font-size:11px;color:#F59E0B;margin-top:6px">${esc(s.link_url)}</p>` : (s.url_hint ? `<p style="direction:ltr">${esc(s.url_hint)}</p>` : '')}
+          </div>`).join('')}
+      </div>
+    ` : ''}
 
     <div class="sec-title"><h2>🎯 كيف يعمل؟</h2></div>
     <div class="policy-grid">
@@ -246,6 +236,7 @@ async function renderHome() {
 // ==================== صفحة الشروط والسياسات ====================
 async function renderLegal() {
   const c = state.settings.content || {};
+  const stores = state.settings.stores || [];
   document.getElementById('app').innerHTML = `
     <div class="sec-title"><h2>📜 الشروط والسياسات</h2></div>
 
@@ -263,6 +254,24 @@ async function renderLegal() {
       <h3>⚖️ الإشعار القانوني وسياسة الخصوصية</h3>
       <p style="color:#475569;line-height:2;font-size:14px">${nl2br(c.legal_text || 'لا يوجد إشعار قانوني منشور حالياً.')}</p>
     </div>
+
+    ${stores.length ? `
+      <div class="summary" style="margin-top:20px">
+        <h3>🏪 المتاجر المدعومة</h3>
+        <div style="display:grid;gap:14px;margin-top:14px">
+          ${stores.map(s => `
+            <div style="padding:16px;background:#F8FAFC;border-radius:12px;border-right:3px solid #F59E0B">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                <span style="font-size:28px">${s.icon || '🛒'}</span>
+                <strong style="font-size:16px;color:#0F172A">${esc(s.name_ar)}</strong>
+              </div>
+              ${s.description ? `<p style="color:#475569;line-height:1.8;font-size:14px;margin-bottom:8px">${nl2br(s.description)}</p>` : ''}
+              ${s.link_url ? `<a href="${esc(s.link_url)}" target="_blank" style="font-weight:700;color:#F59E0B;font-size:13px;direction:ltr;display:inline-block">🔗 ${esc(s.link_url)}</a>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
 
     <div class="summary" style="margin-top:20px">
       <h3>🎯 من نحن</h3>
@@ -298,30 +307,24 @@ async function renderTestimonials() {
 // ==================== مركز المساعدة ====================
 async function renderHelp() {
   const c = state.settings.content || {};
-  const contacts = state.settings.contact_methods || [];
   document.getElementById('app').innerHTML = `
     <div class="sec-title"><h2>💬 مركز المساعدة</h2></div>
+
     <div class="policy-grid">
-      ${contacts.map(cm => {
-        let href = '#', desc = '';
-        if (cm.type === 'whatsapp') { href = 'https://wa.me/' + cm.value.replace(/[^0-9]/g, ''); desc = 'تواصل مباشر عبر واتساب'; }
-        else if (cm.type === 'telegram') { href = 'https://t.me/' + cm.value.replace(/^@/, ''); desc = 'قناتنا على تلغرام'; }
-        else if (cm.type === 'email') { href = 'mailto:' + cm.value; desc = 'أرسل لنا إيميل'; }
-        else if (cm.type === 'link') { href = cm.value; desc = 'افتح الرابط'; }
-        else if (cm.type === 'phone') { href = 'tel:' + cm.value; desc = 'اتصل بنا'; }
-        else { href = cm.value; desc = ''; }
-        return `<a href="${esc(href)}" target="_blank" style="text-decoration:none">
-          <div class="policy-card green">
-            <h4>${cm.icon} ${esc(cm.label)}</h4>
-            <p>${esc(desc)}</p>
-            <p style="margin-top:12px;color:#10B981;font-weight:700">${esc(cm.value)} ←</p>
-          </div>
-        </a>`;
-      }).join('')}
-      <div class="policy-card" onclick="state.user ? navigate('/support') : navigate('/login')" style="cursor:pointer">
+      <div class="policy-card green" onclick="state.user ? navigate('/support') : navigate('/login')" style="cursor:pointer">
         <h4>💬 محادثة داخلية</h4>
-        <p>راسل فريق الدعم مباشرة من داخل المنصة.</p>
-        <p style="margin-top:12px;color:#F59E0B;font-weight:700">ابدأ محادثة ←</p>
+        <p>راسل فريق الدعم مباشرة من داخل المنصة وتابع الردود.</p>
+        <p style="margin-top:12px;color:#10B981;font-weight:700">ابدأ محادثة ←</p>
+      </div>
+      <div class="policy-card" onclick="navigate('/orders')" style="cursor:pointer">
+        <h4>📦 طلباتي</h4>
+        <p>تابع طلباتك الحالية والسابقة بكل تفاصيلها ومراحل التتبع.</p>
+        <p style="margin-top:12px;color:#F59E0B;font-weight:700">افتح الطلبات ←</p>
+      </div>
+      <div class="policy-card" onclick="navigate('/legal')" style="cursor:pointer">
+        <h4>📜 الشروط والسياسات</h4>
+        <p>اقرأ سياسة الاسترجاع والضمان والشروط الكاملة للمنصة.</p>
+        <p style="margin-top:12px;color:#F59E0B;font-weight:700">اقرأ المزيد ←</p>
       </div>
     </div>
 
@@ -782,7 +785,6 @@ async function doLogin() {
     const d = await api('/api/auth/login', 'POST', { identifier, password });
     state.token = d.token; state.user = d.user;
     localStorage.setItem('ws_token', d.token);
-    // أعد تحميل بيانات المستخدم للحصول على admin_path
     await loadMe();
     renderHeader();
     toast('✅ مرحباً ' + (d.user.name || d.user.email));
@@ -875,8 +877,7 @@ async function renderAdmin() {
         <button data-t="ov" onclick="adminTab('ov')">📊 نظرة عامة</button>
         <button data-t="or" onclick="adminTab('or')">🛒 الطلبات</button>
         <button data-t="wa" onclick="adminTab('wa')">💳 المحافظ</button>
-        <button data-t="cm" onclick="adminTab('cm')">📞 طرق التواصل</button>
-        <button data-t="st" onclick="adminTab('st')">🏪 المتاجر</button>
+        <button data-t="st" onclick="adminTab('st')">🏪 المتاجر المدعومة</button>
         <button data-t="te" onclick="adminTab('te')">⭐ الإثباتات</button>
         <button data-t="co" onclick="adminTab('co')">📝 المحتوى والشروط</button>
         <button data-t="ge" onclick="adminTab('ge')">🌍 الدول والمحافظ</button>
@@ -898,7 +899,6 @@ async function adminTab(t) {
     if (t === 'ov') return adminOverview(c);
     if (t === 'or') return adminOrders(c);
     if (t === 'wa') return adminWallets(c);
-    if (t === 'cm') return adminContactMethods(c);
     if (t === 'st') return adminStores(c);
     if (t === 'te') return adminTestimonials(c);
     if (t === 'co') return adminContent(c);
@@ -1140,144 +1140,123 @@ async function delWallet(id) {
 }
 window.delWallet = delWallet;
 
-// ==================== إدارة طرق التواصل ====================
-async function adminContactMethods(c) {
-  const list = await api('/api/admin/contact-methods');
-  const types = [
-    { v: 'whatsapp', l: '📱 واتساب' },
-    { v: 'telegram', l: '✈️ تلغرام' },
-    { v: 'email', l: '📧 إيميل' },
-    { v: 'phone', l: '📞 هاتف' },
-    { v: 'link', l: '🔗 رابط' }
-  ];
-  c.innerHTML = `
-    <div class="toolbar"><h4>📞 طرق التواصل (${list.length})</h4></div>
-    <div class="afm">
-      <h4>➕ إضافة طريقة تواصل</h4>
-      <div class="frow">
-        <div class="fg"><label>النوع:</label>
-          <select id="cm_type">
-            ${types.map(t => `<option value="${t.v}">${t.l}</option>`).join('')}
-          </select>
-        </div>
-        <div class="fg"><label>الأيقونة (emoji):</label>
-          <input id="cm_icon" placeholder="📱" maxlength="4">
-        </div>
-      </div>
-      <div class="frow">
-        <div class="fg"><label>الاسم المعروض:</label>
-          <input id="cm_label" placeholder="واتساب الأعمال">
-        </div>
-        <div class="fg"><label>القيمة (رقم/يوزر/رابط):</label>
-          <input id="cm_value" placeholder="+9639xxxxxxxx" style="direction:ltr;text-align:left">
-        </div>
-      </div>
-      <div class="fg"><label>ترتيب:</label><input type="number" id="cm_order" value="0"></div>
-      <button class="btn-primary" onclick="addContactMethod()">إضافة</button>
-    </div>
-    <div class="tbl-wrap"><table>
-      <tr><th>ID</th><th>النوع</th><th>الاسم</th><th>القيمة</th><th>نشط</th><th>إجراءات</th></tr>
-      ${list.map(cm => `
-        <tr>
-          <td>${cm.id}</td>
-          <td>${cm.icon} ${esc(cm.type)}</td>
-          <td>${esc(cm.label)}</td>
-          <td style="direction:ltr;font-size:12px">${esc(cm.value)}</td>
-          <td>${cm.active ? '✅' : '❌'}</td>
-          <td>
-            <button class="btn-gray btn-sm" onclick="toggleContactMethod(${cm.id}, ${cm.active ? 0 : 1})">${cm.active ? 'إخفاء' : 'إظهار'}</button>
-            <button class="btn-red btn-sm" onclick="delContactMethod(${cm.id})">🗑️</button>
-          </td>
-        </tr>`).join('')}
-    </table></div>
-    <p class="mini" style="margin-top:12px">💡 هذه الطرق تظهر في الفوتر، صفحة "مركز المساعدة"، وفي الصفحة الرئيسية.</p>`;
-}
-async function addContactMethod() {
-  const body = {
-    type: document.getElementById('cm_type').value,
-    icon: document.getElementById('cm_icon').value.trim() || '💬',
-    label: document.getElementById('cm_label').value.trim(),
-    value: document.getElementById('cm_value').value.trim(),
-    sort_order: parseInt(document.getElementById('cm_order').value) || 0
-  };
-  if (!body.label || !body.value) { toast('الاسم والقيمة مطلوبان', 'error'); return; }
-  try {
-    await api('/api/admin/contact-methods', 'POST', body);
-    state.settings = await api('/api/public/data');
-    renderFooter();
-    toast('✅'); adminTab('cm');
-  } catch (e) { toast(e.message, 'error'); }
-}
-window.addContactMethod = addContactMethod;
-async function toggleContactMethod(id, active) {
-  try {
-    const list = await api('/api/admin/contact-methods');
-    const cm = list.find(x => x.id === id);
-    await api('/api/admin/contact-methods/' + id, 'PUT', { ...cm, active: active === 1 });
-    state.settings = await api('/api/public/data');
-    renderFooter();
-    adminTab('cm');
-  } catch (e) { toast(e.message, 'error'); }
-}
-window.toggleContactMethod = toggleContactMethod;
-async function delContactMethod(id) {
-  if (!confirm('حذف طريقة التواصل؟')) return;
-  try {
-    await api('/api/admin/contact-methods/' + id, 'DELETE');
-    state.settings = await api('/api/public/data');
-    renderFooter();
-    toast('تم الحذف', 'info'); adminTab('cm');
-  } catch (e) { toast(e.message, 'error'); }
-}
-window.delContactMethod = delContactMethod;
-
-// ==================== إدارة المتاجر ====================
+// ==================== إدارة المتاجر المدعومة ====================
 async function adminStores(c) {
   const list = await api('/api/admin/stores');
   c.innerHTML = `
-    <div class="toolbar"><h4>🏪 المتاجر المدعومة (${list.length})</h4></div>
+    <div class="toolbar">
+      <h4>🏪 المتاجر المدعومة (${list.length})</h4>
+    </div>
+    <p class="mini" style="margin-bottom:14px">💡 تُعرض هذه المتاجر في الصفحة الرئيسية وفي صفحة "الشروط والسياسات".</p>
+
     <div class="afm">
-      <h4>➕ إضافة متجر</h4>
+      <h4>➕ إضافة متجر جديد</h4>
       <div class="frow">
-        <div class="fg"><label>الاسم العربي:</label><input id="ns_ar" placeholder="أمازون"></div>
-        <div class="fg"><label>الاسم الإنجليزي:</label><input id="ns_en" placeholder="Amazon"></div>
+        <div class="fg"><label>اسم المتجر (بالعربي) *:</label><input id="ns_ar" placeholder="أمازون"></div>
+        <div class="fg"><label>اسم المتجر (بالإنجليزي):</label><input id="ns_en" placeholder="Amazon" style="direction:ltr;text-align:left"></div>
       </div>
       <div class="frow">
-        <div class="fg"><label>الأيقونة:</label><input id="ns_icon" placeholder="🅰️" maxlength="4"></div>
-        <div class="fg"><label>الرابط (للعرض):</label><input id="ns_hint" placeholder="amazon.com" style="direction:ltr;text-align:left"></div>
+        <div class="fg"><label>الأيقونة (emoji):</label><input id="ns_icon" placeholder="🅰️" maxlength="4"></div>
+        <div class="fg"><label>ترتيب العرض:</label><input type="number" id="ns_order" value="0"></div>
+      </div>
+      <div class="fg">
+        <label>الرابط (URL):</label>
+        <input id="ns_link" placeholder="https://www.amazon.com" style="direction:ltr;text-align:left">
+      </div>
+      <div class="fg">
+        <label>الشرح / الوصف:</label>
+        <textarea id="ns_desc" placeholder="أكبر متجر عالمي للمنتجات المتنوعة، يوفر الشحن الدولي..."></textarea>
       </div>
       <button class="btn-primary" onclick="addStore()">إضافة</button>
     </div>
+
     <div class="tbl-wrap"><table>
-      <tr><th>ID</th><th>الأيقونة</th><th>الاسم</th><th>الرابط</th><th>نشط</th><th>إجراءات</th></tr>
+      <tr><th>ID</th><th>الأيقونة</th><th>الاسم</th><th>الرابط</th><th>الشرح</th><th>نشط</th><th>إجراءات</th></tr>
       ${list.map(s => `
         <tr>
-          <td>${s.id}</td><td style="font-size:22px">${s.icon}</td>
-          <td>${esc(s.name_ar)} / ${esc(s.name_en)}</td>
-          <td style="direction:ltr;font-size:11px">${esc(s.url_hint)}</td>
+          <td>${s.id}</td>
+          <td style="font-size:22px">${s.icon || '🛒'}</td>
+          <td>${esc(s.name_ar)}${s.name_en ? ` / ${esc(s.name_en)}` : ''}</td>
+          <td style="direction:ltr;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            ${s.link_url ? `<a href="${esc(s.link_url)}" target="_blank">${esc(s.link_url)}</a>` : (s.url_hint ? esc(s.url_hint) : '-')}
+          </td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.description || '-')}</td>
           <td>${s.active ? '✅' : '❌'}</td>
           <td>
-            <button class="btn-gray btn-sm" onclick="toggleStore(${s.id}, ${s.active ? 0 : 1})">${s.active ? 'تعطيل' : 'تفعيل'}</button>
+            <button class="btn-primary btn-sm" onclick='editStore(${JSON.stringify(s).replace(/'/g, "&#39;")})'>✏️</button>
+            <button class="btn-gray btn-sm" onclick="toggleStore(${s.id}, ${s.active ? 0 : 1})">${s.active ? 'إخفاء' : 'نشر'}</button>
             <button class="btn-red btn-sm" onclick="delStore(${s.id})">🗑️</button>
           </td>
         </tr>`).join('')}
     </table></div>`;
 }
+
 async function addStore() {
   const body = {
     name_ar: document.getElementById('ns_ar').value.trim(),
     name_en: document.getElementById('ns_en').value.trim(),
     icon: document.getElementById('ns_icon').value.trim() || '🛒',
-    url_hint: document.getElementById('ns_hint').value.trim()
+    link_url: document.getElementById('ns_link').value.trim(),
+    description: document.getElementById('ns_desc').value.trim(),
+    sort_order: parseInt(document.getElementById('ns_order').value) || 0
   };
-  if (!body.name_ar || !body.name_en) { toast('الاسم مطلوب', 'error'); return; }
+  if (!body.name_ar) { toast('اسم المتجر مطلوب', 'error'); return; }
   try {
     await api('/api/admin/stores', 'POST', body);
     state.settings = await api('/api/public/data');
-    toast('✅'); adminTab('st');
+    toast('✅ تمت الإضافة');
+    adminTab('st');
   } catch (e) { toast(e.message, 'error'); }
 }
 window.addStore = addStore;
+
+function editStore(s) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.onclick = e => { if (e.target === bg) bg.remove(); };
+  bg.innerHTML = `
+    <div class="modal">
+      <button class="modal-close" onclick="this.closest('.modal-bg').remove()">✕</button>
+      <h3>تعديل متجر: ${esc(s.name_ar)}</h3>
+      <div class="fg"><label>اسم المتجر (بالعربي):</label>
+        <input id="es_ar" value="${esc(s.name_ar || '')}"></div>
+      <div class="fg"><label>اسم المتجر (بالإنجليزي):</label>
+        <input id="es_en" value="${esc(s.name_en || '')}" style="direction:ltr;text-align:left"></div>
+      <div class="fg"><label>الأيقونة (emoji):</label>
+        <input id="es_icon" value="${esc(s.icon || '')}" maxlength="4"></div>
+      <div class="fg"><label>الرابط (URL):</label>
+        <input id="es_link" value="${esc(s.link_url || '')}" style="direction:ltr;text-align:left"></div>
+      <div class="fg"><label>الشرح / الوصف:</label>
+        <textarea id="es_desc">${esc(s.description || '')}</textarea></div>
+      <div class="fg"><label>ترتيب:</label>
+        <input type="number" id="es_order" value="${s.sort_order || 0}"></div>
+      <button class="btn-primary" style="width:100%;padding:12px" onclick="saveStoreEdit(${s.id})">💾 حفظ</button>
+    </div>`;
+  document.body.appendChild(bg);
+}
+window.editStore = editStore;
+
+async function saveStoreEdit(id) {
+  const body = {
+    name_ar: document.getElementById('es_ar').value.trim(),
+    name_en: document.getElementById('es_en').value.trim(),
+    icon: document.getElementById('es_icon').value.trim() || '🛒',
+    link_url: document.getElementById('es_link').value.trim(),
+    description: document.getElementById('es_desc').value.trim(),
+    active: true,
+    sort_order: parseInt(document.getElementById('es_order').value) || 0
+  };
+  if (!body.name_ar) { toast('اسم المتجر مطلوب', 'error'); return; }
+  try {
+    await api('/api/admin/stores/' + id, 'PUT', body);
+    state.settings = await api('/api/public/data');
+    toast('✅ تم الحفظ');
+    document.querySelector('.modal-bg')?.remove();
+    adminTab('st');
+  } catch (e) { toast(e.message, 'error'); }
+}
+window.saveStoreEdit = saveStoreEdit;
+
 async function toggleStore(id, active) {
   try {
     const list = await api('/api/admin/stores');
@@ -1288,12 +1267,14 @@ async function toggleStore(id, active) {
   } catch (e) { toast(e.message, 'error'); }
 }
 window.toggleStore = toggleStore;
+
 async function delStore(id) {
   if (!confirm('حذف المتجر؟')) return;
   try {
     await api('/api/admin/stores/' + id, 'DELETE');
     state.settings = await api('/api/public/data');
-    toast('تم الحذف', 'info'); adminTab('st');
+    toast('تم الحذف', 'info');
+    adminTab('st');
   } catch (e) { toast(e.message, 'error'); }
 }
 window.delStore = delStore;
@@ -1366,7 +1347,7 @@ async function delTesti(id) {
 }
 window.delTesti = delTesti;
 
-// ==================== إدارة المحتوى والشروط ====================
+// ==================== إدارة المحتوى ====================
 async function adminContent(c) {
   const k = await api('/api/admin/content');
   c.innerHTML = `
@@ -1608,7 +1589,6 @@ async function renderPage() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 
   try {
-    // فحص مسار الأدمن السري
     const adminPath = state.user?.admin_path;
     const isAdminPath = adminPath && path === '/' + adminPath;
 
@@ -1637,7 +1617,7 @@ async function renderPage() {
 window.addEventListener('hashchange', renderPage);
 window.addEventListener('DOMContentLoaded', async () => {
   try { state.settings = await api('/api/public/data'); }
-  catch (e) { state.settings = { content: {}, pricing: {}, countries: [], regions: [], stores: [], wallets: [], testimonials: [], contact_methods: [] }; }
+  catch (e) { state.settings = { content: {}, pricing: {}, countries: [], regions: [], stores: [], wallets: [], testimonials: [] }; }
   await loadMe();
   renderPage();
 });
